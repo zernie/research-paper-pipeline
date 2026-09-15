@@ -12,13 +12,15 @@
     "check:globs": "node scripts/rules-see-files.mjs",
     "mutations": "node scripts/run-mutations.mjs"
   },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
   "devDependencies": {
     "@eslint/markdown": "^8.0.3",
     "@eslint/plugin-kit": "^0.7.2",
     "@retorquere/bibtex-parser": "^10.0.1",
     "@unified-latex/unified-latex-util-parse": "^1.8.4",
     "eslint": "^10.9.1",
-    "js-yaml": "^4.1.0",
     "vigiles": "^27.1.4"
   }
 }
