@@ -22,6 +22,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdtempSync,
   mkdirSync,
+  cpSync,
   readdirSync,
   writeFileSync,
   rmSync,
@@ -61,7 +62,20 @@ function managers() {
   return out;
 }
 
-/** A small but REAL corpus: `lint` must pass it clean. */
+/**
+ * The corpus `lint` must pass clean. TWO papers, and they are different ON PURPOSE.
+ *
+ * ⚠️ The comment here used to call this "a small but REAL corpus". It was not: the source was the
+ * four bytes `abcd` and the PDF was a hundred `x`. That is enough to drive the STAGE machinery —
+ * a declared stage, its pdf, its byte counts, the cross-check between them — and it is the reason
+ * those stubs stay. But calling it real overstated what the run proves, and a label that
+ * overstates is how a test stops being read.
+ *
+ * So the stub paper keeps the stage rules honest, and `fixtures/build-e2e/acmart` — an actual
+ * `\documentclass{acmart}` source, the same one the build e2e compiles with a real `pdflatex` —
+ * makes sure the LaTeX rules see LaTeX rather than a placeholder. Neither covers the other:
+ * measured 2026-09-19, the acmart fixture alone linted 2 files, the stub alone drives the stages.
+ */
 function stageCorpus(root) {
   const paper = join(root, "papers", "p1");
   mkdirSync(join(paper, "versions"), { recursive: true });
@@ -74,6 +88,14 @@ function stageCorpus(root) {
   writeFileSync(
     join(paper, "PIPELINE-STATUS.md"),
     `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: 100\n    source: versions/s.tex\n    sourceBytes: 4\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`,
+  );
+  // The real LaTeX half. Copied from this repository's own fixture rather than written inline:
+  // a second inline copy of an acmart preamble would drift from the one the build e2e compiles,
+  // and then the two tests would disagree about what a paper looks like.
+  cpSync(
+    join(ROOT, "fixtures", "build-e2e", "acmart"),
+    join(root, "papers", "acmart"),
+    { recursive: true },
   );
 }
 
