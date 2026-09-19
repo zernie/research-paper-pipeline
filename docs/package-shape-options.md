@@ -65,22 +65,79 @@ small one. This is a real upstream change rather than a manifest tweak, and the 
 is no longer "will optional deps be accepted" but **"is the runtime worth splitting into its own
 package"**.
 
-### 3. UNVERIFIED HERE — the platform facts that make Option B possible
+### 3. MEASURED — two of the three platform claims needed correcting
 
-Three claims about the host were taken from its documentation and have **not** been re-measured in
-this repository. They are load-bearing for Option B and should be checked before that option is
-chosen:
+These three were taken from the host's documentation and were load-bearing for Option B. They
+have now been measured against the real `claude` CLI (2.1.278) driven by a scripted mock model, so
+each run is deterministic and costs nothing. Scripts: [`prior-art/repro/`](prior-art/repro/README.md).
 
-- `${CLAUDE_SKILL_DIR}` is substituted inline in a skill's **body** for every skill location
-  (personal, project, `--add-dir`, plugin), regardless of working directory. Caveat claimed: the
-  substitution does **not** happen in frontmatter `hooks:` commands.
-- A marketplace entry accepts `{"source": "npm", "package": "…", "version": "…"}`, so one
-  published tarball can be both the npm package and the plugin.
-- On a plugin fetch, install scripts never run and dependencies are not installed; `npm ci` runs
-  only if a lockfile is present in the tarball, with a 60-second timeout that never blocks the
-  plugin. Since npm strips `package-lock.json` from tarballs, a plugin copy gets no
-  `node_modules` — which matches the house position that a silent auto-install is worse than an
-  explicit step.
+**(a) `${CLAUDE_SKILL_DIR}` substitutes in a skill's body — HOLDS, and it is the ONLY variable
+that works in both doors.** Measured in the project channel and the plugin channel, the latter
+with the session's cwd in an unrelated directory:
+
+```
+=== A. PROJECT-level skill (.claude/skills) — the npm+symlink door ===
+  CLAUDE_SKILL_DIR     -> "/tmp/vigiles-harness-BHkoMg/.claude/skills/xchan-project"
+  CLAUDE_PLUGIN_ROOT   NOT SUBSTITUTED -> "${CLAUDE_PLUGIN_ROOT}"
+=== B. PLUGIN-provided skill — the plugin door ===
+  CLAUDE_SKILL_DIR     -> ".../xchanplugin/skills/xchan-plugin"
+  CLAUDE_PLUGIN_ROOT   -> ".../xchanplugin"
+```
+
+The documented `${CLAUDE_PLUGIN_ROOT}` is a literal no-op in the project channel, and where it
+does work it anchors to the plugin root rather than the skill, so it would force two spellings of
+every path. There is no second candidate. **Bonus the claim omitted:** `allowed-tools` frontmatter
+substitutes too — which matters, because 18 of the 89 SKILL.md occurrences live there rather than
+in the body.
+
+**(b) The `hooks:` caveat is real and WORSE than "not substituted".** The placeholder is passed
+through to the shell, which expands an unset variable to nothing, so
+`node ${CLAUDE_SKILL_DIR}/scripts/x.mjs` silently becomes `node /scripts/x.mjs` — no error, and no
+`${...}` literal left to grep for. The hook fires (`exitCode 0`, sentinel green), so this is "no
+substitution", not "no run". Upstream `anthropics/claude-code#36135` describes exactly this and is
+**closed as not planned**. ⇒ `plugin/hooks/hooks.json` must keep `${CLAUDE_PROJECT_DIR}` /
+`${CLAUDE_PLUGIN_ROOT}` and must never adopt `${CLAUDE_SKILL_DIR}`.
+
+**(c) The npm marketplace entry — HOLDS, but the shape recorded above was WRONG.** `source` is an
+object whose own `source` key names the type. Verified twice, independently, capturing the real
+exit code:
+
+```console
+$ claude plugin validate <flat, as this note first recorded it> --strict   # RC=1
+  > plugins[0].source: Bare source name "npm" requires metadata.pluginRoot.
+$ claude plugin validate <nested>                                --strict   # RC=0
+  √ Validation passed
+$ claude plugin validate <"source": "nosuchsourcetype">          --strict   # RC=1  (control)
+```
+
+```json
+{ "name": "research-paper-pipeline",
+  "source": { "source": "npm", "package": "research-paper-pipeline", "version": "^0.1.0" } }
+```
+
+`version` is optional and accepts an exact version or a range. Because the wrong shape fails
+`claude plugin validate --strict` with a nonzero code, this is a defect that a CI gate can make
+unshippable rather than a thing to remember.
+
+**(d) "Dependencies are not installed" — FALSE as worded; the conclusion survives for a different
+reason.** Measured A/B on two byte-identical plugins differing only by a lockfile: with one,
+`node_modules` materialised in the plugin cache; without one, nothing, and no log entry. Lifecycle
+scripts did not run in either. The true rule is **`npm ci --ignore-scripts` runs iff `package.json`
+AND a supported lockfile are both present in the fetched root**. What rescues the conclusion is a
+separate fact: `npm pack` strips `package-lock.json` unconditionally — proven with a positive
+control, where a newly created file listed in the same `files[]` array was included while the
+lockfile in that array was not.
+
+⇒ **A plugin installed from npm gets no `node_modules`, silently.** Three scripts break on it, not
+zero: `pipeline-check.mjs`, `extract-ref-facts.mjs` and `bib-authors.mjs`, all reaching
+`markdown-it`. Which retires a number this note carried: the closure is **two** third-party
+packages over **eight** referenced scripts, not one over seven — `extract-ref-facts.mjs` reaches
+`@retorquere/bibtex-parser` through a dynamic `await import()` that a static grep does not see.
+
+⏳ **Not measured, recorded as such:** the documented 60-second install timeout; the personal
+`~/.claude/skills` and `--add-dir` channels (2 of 4 locations verified); and a genuine
+`{"source":"npm"}` install end-to-end — the A/B used a local git source, since publishing to a
+registry was out of scope.
 
 ### 4. VERIFIED INDEPENDENTLY — the mtime check is wrong on every fresh checkout
 
@@ -143,9 +200,10 @@ and `node_modules`) and something must say whether their versions agree.
 **Buys:** the plugin and the npm package cannot ship different skills — there is one tarball, so
 the "installs all 24 skills" contradiction is resolved by fact rather than by editing prose. Every
 skill path becomes `${CLAUDE_SKILL_DIR}/…`, which the host resolves instead of the prose guessing.
-**Costs:** publishing to npm becomes a precondition; 113 literals rewritten and the existing
-advisory rule flipped to error; one bundling step for the seven scripts the skills call (measured:
-they import exactly one third-party module between them). **Gives up:** nothing structural — the
+**Costs:** publishing to npm becomes a precondition; the SKILL.md literals rewritten (measured:
+**89** occurrences across 23 skills — 71 in bodies, 18 in `allowed-tools`, both of which
+substitute) and the existing advisory rule flipped to error; and vendoring `markdown-it`, because
+the plugin door gets no `node_modules` at all (correction 3d). **Gives up:** nothing structural — the
 package stays a 26-skill monolith, and a researcher who never uses an agent still downloads 2.9 MB
 of markdown.
 

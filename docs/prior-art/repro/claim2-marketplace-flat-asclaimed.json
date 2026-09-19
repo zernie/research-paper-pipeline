@@ -1,0 +1,1 @@
+{ "name": "rpp-probe", "owner": { "name": "zernie", "url": "https://github.com/zernie" }, "metadata": { "description": "probe marketplace" }, "plugins": [ { "name": "research-paper-pipeline", "source": "npm", "package": "research-paper-pipeline", "version": "^0.1.0", "description": "flat shape as the CLAIM words it" } ] }

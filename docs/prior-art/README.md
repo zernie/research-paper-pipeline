@@ -43,6 +43,13 @@ It does not argue whether this package should exist, or how it compares to other
 skill suites — that question is answered in `CONTRIBUTING.md`, § "Why not one of the existing
 academic skill suites". Different question, deliberately not merged.
 
+## The scripts behind the numbers
+
+[`repro/`](repro/README.md) holds the probes for the platform measurements that
+`../package-shape-options.md` § "Premise corrections" rests on — the `${CLAUDE_SKILL_DIR}`
+substitution table, the five marketplace shapes with their real exit codes, and the dependency
+closure scan. They are kept so a verdict here can be disagreed with by running a program.
+
 ## Status
 
 Written 2026-09-19 from first-hand fetches of the sources cited in each file.

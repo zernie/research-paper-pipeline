@@ -27,7 +27,11 @@ export default [
   //
   // Measured 2026-09-17: the race had been latent and surfaced the moment a 54th harness
   // shifted the scheduling. Nothing about the new harness was wrong — which is the point.
-  { ignores: [".tmp-stages-src-*/", "fixtures/.tmp-*/"] },
+  // `docs/prior-art/repro/` is EVIDENCE, not source: those scripts are kept exactly as they were
+  // run, so that a verdict in the design notes can be re-measured rather than argued with. Linting
+  // them invites the next reader to tidy an unused import — and then the file on disk is no longer
+  // the file that produced the number it backs.
+  { ignores: [".tmp-stages-src-*/", "fixtures/.tmp-*/", "docs/prior-art/repro/"] },
   /**
    * 🔴 THIS BLOCK COVERS THE PACKAGE ITSELF, and before 2026-09-15 it was not here: the config held only
    * one block for `.tex` (I don't quote the glob inside this comment: the sequence

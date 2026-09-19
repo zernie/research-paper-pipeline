@@ -1,0 +1,1 @@
+{ "name": "rpp-probe", "owner": { "name": "zernie", "url": "https://github.com/zernie" }, "metadata": { "description": "probe marketplace" }, "plugins": [ { "name": "research-paper-pipeline", "source": { "source": "nosuchsourcetype", "package": "x" }, "description": "negative control" } ] }

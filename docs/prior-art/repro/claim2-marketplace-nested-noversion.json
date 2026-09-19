@@ -1,0 +1,9 @@
+{
+  "name": "rpp-probe",
+  "owner": { "name": "zernie", "url": "https://github.com/zernie" },
+  "plugins": [
+    { "name": "research-paper-pipeline",
+      "source": { "source": "npm", "package": "research-paper-pipeline" },
+      "description": "npm-sourced plugin probe" }
+  ]
+}
