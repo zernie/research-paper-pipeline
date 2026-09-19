@@ -271,7 +271,7 @@ jobs:
       # measurements — `skills/render-paper/ci-tex-toolchain-decision.md`.
       - name: TeX Live from cache
         id: tex-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/texlive
           key: texlive-${{ runner.os }}-${{ hashFiles('skills/render-paper/ci-install-texlive.sh') }}
