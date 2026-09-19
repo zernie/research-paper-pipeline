@@ -165,6 +165,19 @@ path literal outside the port a finding. Prose will not hold this class — four
 happened *while* comments explaining the hazard sat directly above the code
 ([`docs/incidents.md`](docs/incidents.md)).
 
+## Before changing the command surface or a delivery channel — read the prior art
+
+[`docs/prior-art/`](docs/prior-art/README.md) records how comparable tools solved the same
+problems, each claim with the URL that was checked: Quarto and Vale (the domain and content
+analogues), Biome (one tool, one config, one command), Danger and reviewdog (who decides to
+fail a run), `unicorn/expiring-todo-comments` and Semgrep (checks that read a clock or a diff).
+
+It is here as a POINTER and stays a pointer: this file is read on every turn, so it carries
+the instruction and never the evidence — the same split as rules 9 and 10 and `docs/incidents.md`.
+
+🔴 The argument "we need another command for X" is, in every tool examined, an argument that
+the CONFIG is not declaring something. Check that before adding a verb.
+
 ## Distribution — no `smh init`, and that is a measured decision (2026-09-10)
 
 Considered: a `research-paper-pipeline init` command that installs the ESLint config and the

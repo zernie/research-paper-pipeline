@@ -38,6 +38,10 @@ skills/         24 stage skills
 scripts/        this repo's own gates
 action.yml      the CI composite action
 fixtures/       inputs the harnesses lint
+docs/           evidence that would otherwise bloat CLAUDE.md:
+                  prior-art/  how comparable tools are shaped, and why this one is shaped so
+                  incidents.md  what broke, measured
+                  install.md  the install contract
 ```
 
 ## Working on this package
