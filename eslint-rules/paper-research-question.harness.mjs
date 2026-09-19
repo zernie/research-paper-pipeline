@@ -74,6 +74,18 @@ check("the stage list in the message comes from the field and carries BOTH",
 // markdown — the second half of LANGUAGE, without it one of the two real findings is lost
 check("a paper in markdown is checked the same way", lint("markdown-no-rq", "paper.md").length === 1);
 
+// ── THE CASE THE PREDECESSOR COULD NOT EXPRESS ──────────────────────────────────────────
+// 🔴 The point of the 2026-09-19 redesign, in one fixture. The scorecard declares a question,
+// the paper does not carry it — AND the paper contains the words "research question", inside
+// "We leave the research question to future work". The old pattern matched that phrase and went
+// SILENT on a paper stating no question at all. Matching a sentence ABOUT the thing is not
+// finding the thing, and no list of spellings fixes that.
+const drifted = lint("declared-not-in-paper", "paper.tex");
+check("declared but absent from the paper — a finding, where the old pattern was silent",
+      drifted.length === 1);
+check("and the message QUOTES what was looked for, so the author can see why it missed",
+      /does pruning reduce review cost\?/i.test(drifted[0]));
+
 // ── stays silent where it must ──────────────────────────────────────────────────────────
 check("the question is stated — silent", lint("shipped-with-rq", "paper.tex").length === 0);
 // The stage gate: a draft owes nothing, because it never asked anyone to read it.
@@ -85,12 +97,15 @@ check("a draft (no stages) — silent, even though it has no question either",
 check("and with a nonexistent scorecard a shipped paper is also silent — the stage gate is load-bearing",
       lint("shipped-no-rq", "paper.tex", { statusFile: "NO-SUCH-FILE.md" }).length === 0);
 
-// ── a named hole, pinned down by an assert ──────────────────────────────────────────────
-// The rule reads RAW text, so a mention inside a LaTeX comment puts it to sleep. Measured
-// 2026-09-17 across all four papers in the corpus: zero such cases, the hole is LATENT. The
-// assert stands here so that closing it is a deliberate decision, not an accidental find.
-check("a mention ONLY inside a LaTeX comment puts the rule to sleep — the hole is named, not forgotten",
-      lint("comment-only", "paper.tex").length === 0);
+// ── a named hole, pinned down by an assert, and RESHAPED by the redesign ────────────────
+// ⚠️ The hole changed form on 2026-09-19 and did not close. Before, ANY mention of "RQ" in a
+// LaTeX comment silenced the rule. Now the rule no longer hunts for spellings, so this fixture
+// — a comment saying "TODO: state the research question", with no `researchQuestion` field —
+// is a FINDING, which it never was before. What survives is narrower: if the DECLARED sentence
+// appears only inside a comment, the raw-text comparison still accepts it. That is a smaller
+// hole with a named owner, and closing it means walking the parsed tree.
+check("a paper whose only mention is a comment, with nothing declared, is now a finding",
+      lint("comment-only", "paper.tex").length === 1);
 
 // ── the scorecard's name is consumer data ───────────────────────────────────────────────
 check("the scorecard's name comes in as an option",

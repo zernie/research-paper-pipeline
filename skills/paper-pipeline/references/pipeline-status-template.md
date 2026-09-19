@@ -11,6 +11,33 @@ the checks go quiet — which, as of 2026-08-03, is a failure mode this repo has
 times in one day. Run `node .claude/skills/paper-pipeline/scripts/pipeline-check.mjs <paper-dir>`
 after editing to confirm it still parses.
 
+## The front matter
+
+Above the sections, the file carries YAML. Two fields are read by rules:
+
+```yaml
+---
+stages:
+  - stage: submitted
+    date: 2026-07-22
+    pdf: versions/2026-07-22-submitted.pdf
+    bytes: 305412
+    source: versions/2026-07-22-submitted.tex
+    sourceBytes: 57210
+researchQuestion: "Does pruning the state space reduce review cost?"
+---
+```
+
+`researchQuestion` is **your sentence, written once** — not a label the checker hunts for in the
+prose. `paper/research-question` then asks two things it can actually answer: is it written down,
+and does the paper contain it (whitespace collapsed). Leave the field out and a shipped paper gets
+an advisory finding, which is the right outcome for a position paper with no question: the absence
+becomes a decision on the record rather than an omission.
+
+⚠️ Write the sentence the way it appears in the paper. If the paper breaks it across lines that is
+fine — only whitespace is normalised — but LaTeX markup inside the sentence (`\emph{cost}`) will not
+match, and the finding will quote exactly what it looked for.
+
 ## The row ids, and what each one runs
 
 The `id` cell is the **join key** — the same string appears in this template, in every paper's

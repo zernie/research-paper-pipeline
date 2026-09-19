@@ -5,6 +5,6 @@ stages:
     venue: A Venue 2026
     pdf: versions/2026-07-22-submitted.pdf
     bytes: 100
-researchQuestion: "does a rule written in prose survive to the run?"
+researchQuestion: "Does pruning reduce review cost?"
 ---
 # PIPELINE-STATUS

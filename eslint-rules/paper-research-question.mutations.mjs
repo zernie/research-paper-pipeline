@@ -25,13 +25,27 @@ process.exit(
     runner: "node",
     cases: [
       {
-        name: "the rule stops noticing the absence of a question",
+        name: "the rule stops noticing that nothing was declared",
         harness: HARNESS,
         expect: "shipped and no question — a finding",
         disables:
           "the subject itself: the rule stays silent across the whole corpus, and silence is " +
           "its success state — from the outside a disabled rule is indistinguishable from a clean paper",
-        edits: [[RULE, "if (RQ_RE.test(raw)) return;", "return;"]],
+        edits: [[RULE, 'if (question.trim() === "") {', "if (false) {"]],
+      },
+      {
+        // 🔴 The half that did not exist before 2026-09-19, and the reason the redesign happened.
+        // Without this case the second step could be deleted and the battery would stay green on
+        // the strength of the first — which is how a two-step check quietly becomes a one-step one.
+        name: "the CONTENT check is dropped — a declaration nobody carries passes",
+        harness: HARNESS,
+        expect: "declared but absent from the paper — a finding, where the old pattern was silent",
+        disables:
+          "step two. The scorecard would only have to SAY a question exists, never to have it in " +
+          "the paper — which is the checklist the `bytes` field exists to not be. The predecessor " +
+          "failed the same way from the other side: it matched «we leave the research question to " +
+          "future work» and reported a paper that states no question as clean",
+        edits: [[RULE, "if (flatten(raw).includes(flatten(question))) return;", "return;"]],
       },
       {
         name: "the STAGE GATE is removed — drafts get scolded too",

@@ -37,34 +37,74 @@ import { join, dirname } from "node:path";
 import { load } from "js-yaml";
 
 /**
- * Three ways to write the same thing. A regex is LEGITIMATE here: the subject is human prose,
- * which has no structure by definition, and no parser can tell a question's statement apart from
- * a paragraph about it. The list of forms is open on purpose: `\textbf{RQ` — how it's typeset in
- * LaTeX, `RQ1`/`RQ` — how it's referred to in text, `research question` — how it's named in words.
+ * 🔴 THE REGEX IS GONE, AND THE REASON IS NOT "regexes are bad" — IT IS THAT IT ANSWERED THE
+ * WRONG QUESTION (2026-09-19).
+ *
+ * What stood here was `/\\textbf\{RQ|\bRQ[0-9]?\b|research question/i`, defended in this very
+ * file with: "a regex is LEGITIMATE here: the subject is human prose, which has no structure by
+ * definition, and no parser can tell a question's statement apart from a paragraph about it."
+ *
+ * The premise is true. The conclusion does not follow. From "the text cannot decide this" the
+ * answer is not "so pattern-match harder" — it is "so the HUMAN declares it, and the check
+ * compares the declaration against the text." The three spellings were an undeclared schema
+ * field: someone added a fact and invented a convention for how it would look in prose, which is
+ * the design running backwards.
+ *
+ * What the pattern actually decided, in both directions:
+ *   • a paper that says "we leave the research question to future work" — MATCHED, and the rule
+ *     went silent on a paper that states no question at all;
+ *   • a paper whose question is written plainly ("Does pruning reduce review cost?") with no
+ *     "RQ" anywhere — NOT matched, and the rule reported a paper that does exactly what is asked.
+ * An open list of spellings cannot be completed, so both failures are structural, not bugs.
+ *
+ * ── WHAT REPLACES IT: ONE UNDECIDABLE QUESTION BECOMES TWO DECIDABLE ONES ──────────────────
+ *   1. Is the question WRITTEN DOWN? — `researchQuestion` in the scorecard's front matter. A
+ *      field, parsed by js-yaml, not a phrase hunted for in prose.
+ *   2. Does the paper CONTAIN what was written down? — the declared sentence, whitespace
+ *      collapsed, compared against the source. Bytes, not spelling.
+ *
+ * This is the shape this package already uses twice, and for the same reason: `bytes`/
+ * `sourceBytes` (a recorded number compared against the file on disk) and `paper/author-list`
+ * (a recorded marker, because whether a cross-check ran is not visible in the paper). Neither
+ * asks the prose a question the prose cannot answer.
+ *
+ * ⚠️ WHAT THIS STILL CANNOT DO, said plainly rather than implied: nothing here decides that the
+ * declared sentence IS a research question. A declaration of "banana" passes step 1 and, if the
+ * word appears in the paper, step 2. The rule guarantees that the author wrote a question down
+ * and that the paper carries it — it does not grade the question. That is a human's job, and
+ * pretending otherwise is what the regex was doing.
  */
-const RQ_RE = /\\textbf\{RQ|\bRQ[0-9]?\b|research question/i;
 
-/** Stages declared by the FIELD. No scorecard or no field — the paper has not shipped. */
-function declaredStages(dir, statusName) {
+/** Whitespace is the only thing normalised: a sentence wrapped across lines is the same sentence. */
+const flatten = (t) => t.replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * Both facts come out of ONE parse of the scorecard's front matter: the stages (has this paper
+ * shipped?) and the declared question. Reading them separately would invite the two to be taken
+ * from different revisions of the same file.
+ */
+function scorecard(dir, statusName) {
   const p = join(dir, statusName);
-  if (!existsSync(p)) return [];
+  const none = { stages: [], question: "" };
+  if (!existsSync(p)) return none;
   let text;
   try {
     text = readFileSync(p, "utf-8");
   } catch {
-    return [];
+    return none;
   }
   const m = /^---\n([\s\S]*?)\n---/.exec(text);
-  if (!m) return [];
+  if (!m) return none;
   let data;
   try {
     data = load(m[1]);
   } catch {
-    return []; // the unreadable YAML is already reported by `paper/stages`, on its own file
+    return none; // the unreadable YAML is already reported by `paper/stages`, on its own file
   }
   const raw = data?.stages;
-  if (!Array.isArray(raw)) return [];
-  return raw.map((r) => r?.stage).filter(Boolean);
+  const stages = Array.isArray(raw) ? raw.map((r) => r?.stage).filter(Boolean) : [];
+  const q = data?.researchQuestion;
+  return { stages, question: typeof q === "string" ? q : "" };
 }
 
 export default {
@@ -89,8 +129,10 @@ export default {
           },
         ],
         messages: {
-          missing:
-            "the paper shipped (stage «{{stages}}») but never states a research question. This is reviewer A's verbatim point on agenticdev (#20). Advisory: a position paper may legitimately have none — but then that is a DECISION, not an omission",
+          notDeclared:
+            "the paper shipped (stage «{{stages}}») and its scorecard declares no `researchQuestion`. This is reviewer A's verbatim point on agenticdev (#20), not the linter's taste. Write the question down as a field, in your own words — the check cannot infer it from the prose, and the pattern that used to try matched «we leave the research question to future work» while missing a question stated plainly. Advisory: a position paper may legitimately have none, and then leaving the field out is a DECISION — record it as one",
+          notInPaper:
+            "the scorecard declares a research question the paper does not contain. Looked for «{{needle}}» with whitespace collapsed, and the source has no such run of text. Either the paper dropped it or the declaration drifted from what was written — and which of the two it is, only you know",
         },
       },
       create(context) {
@@ -102,10 +144,28 @@ export default {
           "root:exit"(node) {
             const raw = context.sourceCode.raw ?? context.sourceCode.text;
             if (typeof raw !== "string") return;
-            const stages = declaredStages(dirname(context.filename), statusName);
+            const { stages, question } = scorecard(dirname(context.filename), statusName);
             if (stages.length === 0) return; // not shipped — owes nothing
-            if (RQ_RE.test(raw)) return;
-            context.report({ node, messageId: "missing", data: { stages: stages.join("/") } });
+
+            // Step 1 — is it written down? A field, not a phrase hunted for in prose.
+            if (question.trim() === "") {
+              context.report({
+                node,
+                messageId: "notDeclared",
+                data: { stages: stages.join("/") },
+              });
+              return;
+            }
+
+            // Step 2 — does the paper carry what was written down? Bytes, not spelling. Only
+            // whitespace is normalised, because a sentence wrapped across source lines is the
+            // same sentence; everything else stays the author's.
+            if (flatten(raw).includes(flatten(question))) return;
+            context.report({
+              node,
+              messageId: "notInPaper",
+              data: { needle: flatten(question) },
+            });
           },
         };
       },
