@@ -107,7 +107,28 @@ export async function actualCounts(root = ROOT) {
  */
 export function declaredCounts(text) {
   const out = {};
-  for (const m of text.matchAll(/<!--\s*count:([a-z]+)\s*-->\s*(\d+)/g)) out[m[1]] = Number(m[2]);
+  for (const { key, value } of countDeclarations(text)) out[key] = value;
+  return out;
+}
+
+/**
+ * EVERY occurrence, in order — not a map keyed by counter name.
+ *
+ * 🔴 WHY THIS EXISTS, AND IT IS A MEASURED HOLE IN THIS VERY CHECK (2026-09-19). `declaredCounts`
+ * assigns into an object, so a second `<!-- count:rules -->` in the same file SILENTLY REPLACES
+ * the first and the first is never compared against anything. Proven by mutation: a duplicate
+ * marker was added to the README's intro and set to `11` against `12` on disk, and this check
+ * stayed GREEN at exit 0. Two markers read as twice the coverage and delivered less than one.
+ *
+ * That is the exact class this repository keeps re-finding: a counter that counts what it
+ * ignores. The verdict loop below now judges every occurrence, so a wrong copy is a finding no
+ * matter where it sits — and the same applies across DECLARING_FILES, where `declared[k] = v`
+ * used to let CONTRIBUTING.md's value shadow the README's.
+ */
+export function countDeclarations(text) {
+  const out = [];
+  for (const m of text.matchAll(/<!--\s*count:([a-z]+)\s*-->\s*(\d+)/g))
+    out.push({ key: m[1], value: Number(m[2]) });
   return out;
 }
 
@@ -122,14 +143,16 @@ export function declaredCounts(text) {
 export const DECLARING_FILES = ["README.md", "CONTRIBUTING.md"];
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const declared = {};
-  const declaredIn = {}; // so a finding sends you to fix THE file where the number is written
+  // Every occurrence is kept, because judging only the last one is how this check went hollow.
+  const occurrences = {}; // counter -> [{ file, value }], in file then document order
   for (const f of DECLARING_FILES) {
-    for (const [k, v] of Object.entries(declaredCounts(readFileSync(join(ROOT, f), "utf-8")))) {
-      declared[k] = v;
-      declaredIn[k] = f;
+    for (const { key, value } of countDeclarations(readFileSync(join(ROOT, f), "utf-8"))) {
+      (occurrences[key] ??= []).push({ file: f, value });
     }
   }
+  const declared = Object.fromEntries(
+    Object.entries(occurrences).map(([k, list]) => [k, list[0].value]),
+  );
   const actual = await actualCounts();
   const keys = Object.keys(actual);
 
@@ -142,8 +165,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   const bad = [];
   for (const k of keys) {
-    if (!(k in declared)) bad.push(`  ${k}: ${actual[k]} on disk, and declared neither in README nor in CONTRIBUTING`);
-    else if (declared[k] !== actual[k]) bad.push(`  ${k}: ${declaredIn[k]} promises ${declared[k]}, ${actual[k]} on disk`);
+    if (!(k in occurrences)) {
+      bad.push(`  ${k}: ${actual[k]} on disk, and declared neither in README nor in CONTRIBUTING`);
+      continue;
+    }
+    // EVERY copy is compared. A duplicate that disagrees is a finding wherever it sits.
+    occurrences[k].forEach(({ file, value }, i) => {
+      if (value === actual[k]) return;
+      const which = occurrences[k].length > 1 ? ` (copy ${i + 1} of ${occurrences[k].length})` : "";
+      bad.push(`  ${k}: ${file}${which} promises ${value}, ${actual[k]} on disk`);
+    });
   }
   for (const k of Object.keys(declared)) {
     if (!keys.includes(k)) bad.push(`  ${k}: ${declared[k]} declared, but there is no such counter`);

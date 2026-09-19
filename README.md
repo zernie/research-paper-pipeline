@@ -1,178 +1,162 @@
 # research-paper-pipeline
 
-Checks for an academic paper that lives in a git repository and is written with an AI coding
-agent (Claude Code). It ships two things:
+> A linter and an agent workflow for a research paper kept in git.
 
-- **<!-- count:skills -->24 skills** — instruction files the agent reads, one per stage of writing a paper: decide
-  whether the idea is worth it, pick a venue, run the study, draft, tighten, red-team, simulate
-  the program committee, submit, camera-ready, extend into a second paper.
-- **<!-- count:rules -->12 rules and 3 hooks** — machine checks that verify what those stages _claim_. Each paper
-  keeps a scorecard file, `PIPELINE-STATUS.md`. A skill writes "submitted on this date, this PDF,
-  this many bytes" into it; a rule then reads the scorecard and compares it with the files on
-  disk. The rule never trusts the skill's word.
+The package has three parts:
 
-CLI name: `rpp`. Requires Node 22.13 or newer.
+- **<!-- count:rules -->12 ESLint rules** that check a paper against itself — nine of them run on your papers.
+- **<!-- count:skills -->24 skills**: instruction files an AI coding agent (Claude Code) reads, one
+  per stage of writing a paper. The skills are what *do* the work and write down what they did;
+  the rules check that record against the files.
+- **3 hooks** for Claude Code: one blocks an edit that would skip the checks, two are reminders.
 
-## Install and first run
+It is ESLint underneath — `rpp lint` builds a flat config and runs it — so severities, `--json`
+output and wiring the rules into a config you already have all behave the way you expect.
 
-Not on npm yet — install from GitHub, pinned to a commit:
+**You do not need the agent.** `rpp lint` is a plain CLI: Node, the installed package, nothing
+else — no agent, no TeX, no network. The skills and hooks are the second half, and they are opt-in.
+
+What the rules catch, in plain language:
+
+- You declared the paper submitted on a date, and the PDF named in that record is not on disk —
+  or it is, but it is not the same file any more.
+- Your camera-ready still says *we will release our code* after you released it.
+- You marked a paper submitted and never wrote down that you checked the author list against
+  the bibliography.
+
+That last one is a record check, not a bibliography check — see the table below for exactly what
+each rule reads.
+
+Node 22.13 or newer. CLI name: `rpp`.
+
+**A word used precisely in this document:** a **gate** is a check that can block — it fails a run
+or refuses a command. A **stage** is a point a paper has reached (`submitted`, `camera-ready`).
+Reminders that only print are called reminders, not gates.
+
+## What the rules check
+
+**Nine of the rules run on your papers**, listed here; the other three lint
+this package's own source and never see your files.
+
+| Rule | Level | Reads | Fails when |
+| ---- | ----- | ----- | ---------- |
+| `paper/stages` | error | `PIPELINE-STATUS.md` | a declared stage's PDF is missing, or the `bytes:` it names does not match the file's real size, or a frozen PDF exists that no stage declares |
+| `paper/source` | error | `PIPELINE-STATUS.md` | a declared stage has no frozen `.tex` beside its PDF (a commit hash does not count — squash and gc destroy it) |
+| `paper/author-list` | warn | `PIPELINE-STATUS.md` | a stage is declared and **no cell of the scorecard's table contains the run marker** (default `bib-authors`). It checks that you recorded the cross-check; it does not read your `.bib`. What to run is your own `authorListCommand`, empty by default |
+| `paper/research-question` | warn | `paper.tex`, `paper.md` | a stage is declared and the source matches **none** of `RQ`, `RQ1`, `\textbf{RQ` or the words "research question", case-insensitive. That is the whole test — a regex, which is why it is advisory |
+| `paper/typography` | warn | `paper.tex`, `paper.md` | any of four counts rises above the per-paper allowance you set: `§` or `\S\ref` instead of "Section"; a decimal with no leading zero (`.05`); `Fig.` and `Figure` mixed in one document; bibliography entries with no doi, url or arXiv id. Existing debt is tolerated, growth is not |
+| `tex/future-promise` | warn | `paper.tex` | a camera-ready build still says "will be released" about something already handed over |
+| `tex/acm-frontmatter-override` | error | `paper.tex` | an `acmart` build overrides ACM's front-matter commands and drops template elements from page 1 |
+| `review/findings-cause` | error | `reviews/*.md` | a review lists at least `minFindings` (default 3) findings and no cell introduces a cause with the marker (default `Cause:`) |
+| `doc/fields` | warn | `reviews/*.md` | a front-matter field is missing or holds a value outside the list you configured. Off entirely unless you configure `docFields` |
+
+Errors fail the run; warnings print and do not.
+
+**LaTeX or Markdown.** The scorecard and the review notes are always Markdown, so their five rules
+apply either way. For the paper body it is not symmetrical: a `.tex` body gets four rules, a `.md`
+body gets two — `tex/future-promise` and `tex/acm-frontmatter-override` are LaTeX-only.
+
+Every rule is tested twice: it has to catch a planted mistake, and it has to stay quiet on a
+correct file. Both halves matter, because a broken check and a clean file look identical from
+outside. A second suite then deletes one load-bearing line from each rule and confirms the right
+test goes red. Details in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## What adopting this costs you
+
+Not a read-only checker you point at an existing repository. Before you install, know that:
+
+**You write and maintain a `PIPELINE-STATUS.md` in every paper directory.** It does not appear by
+itself. Nothing generates it and no command refreshes it — you copy the template from
+`skills/paper-pipeline/references/pipeline-status-template.md` and keep it current, or the agent
+does it for you as it runs the stages. Without that file a paper directory gets zero rules.
+
+**`rpp init` writes to your repository.** Exactly:
+
+| what | where | when |
+| --- | --- | --- |
+| a `research-paper-pipeline` key naming your papers directory | your `package.json` | always |
+| a GitHub Actions workflow | `.github/workflows/` | only if you say yes; it asks once, and only when stdin is a terminal |
+
+It installs no software and touches nothing else.
+
+**One of the three Claude Code hooks can block you** — and only if you install the plugin, which
+is a separate step. `paper-edit-guard` runs before every Bash command and refuses a Bash write to
+a paper source, because such a write skips the checks that hang on Edit/Write. Its sharp edge is
+documented in its own source: if the `research-paper-pipeline` key cannot be parsed — missing
+`package.json`, conflict markers — the guard **denies every Bash command** until you fix it,
+rather than failing open and looking green. The recovery is an Edit or Write, which bypass the
+hook entirely. To turn it off, do not install the plugin, or remove it from your Claude Code
+settings; the rules and the CLI work without it. The other two hooks never block (see below).
+
+## Install
+
+There is **no published npm release and no git tag** — not on npm, no `v0.1.0` to pin to. Install
+from GitHub against a commit sha from the default branch:
 
 ```sh
 npm i -D github:zernie/research-paper-pipeline#<commit-sha>
-npx rpp init               # sets the project up and reports its own condition
+npx rpp init
 ```
 
-Then two lines inside Claude Code, which `init` prints for you — they are typed into a different
-program and nothing on disk can type them for you:
+`rpp init` ends by running `rpp doctor` and exits with its verdict. Believe that over the absence
+of errors: a guard watching an empty directory looks exactly like a guard that is working, because
+silence is its success state. `doctor` prints the directory the linter uses and the directory the
+hooks use side by side, and exits non-zero when they differ
+([#33](https://github.com/zernie/research-paper-pipeline/issues/33)).
 
-```
-/plugin marketplace add zernie/research-paper-pipeline
-/plugin install research-paper-pipeline@research-paper-pipeline
-```
+npm and pnpm are covered by an end-to-end install test; Yarn Plug'n'Play is not supported. The
+measurements behind both, and behind the package/plugin split, are in
+[`docs/install.md`](docs/install.md).
 
-That is the whole install: three actions. `init` **measures** rather than asks wherever it can —
-it finds the directory your papers live in by looking for one whose subdirectories carry a paper
-file, writes that as a single declaration into your `package.json`, and prints which external
-programs are missing and the command that installs each. It asks exactly one question, and only
-when stdin is a terminal: whether to write a GitHub Actions workflow. In CI, or under a script, it
-asks nothing and says which default it took. It installs nothing — see
-[`docs/install.md`](docs/install.md) for the eight tools that were measured to arrive at that
-shape.
+The skills — not the linter — call external programs such as TeX Live, poppler and a JRE. See
+[`docs/toolchain.md`](docs/toolchain.md).
 
-Afterwards:
+## Usage
 
 ```sh
-npx rpp doctor             # says what is actually wired — and what only LOOKS wired
-npx rpp lint               # runs every rule over the declared directory
-npx rpp build <paper>      # builds one paper with ITS OWN build script
+npx rpp lint                        # run every rule over your papers
+npx rpp lint papers/my-paper        # ... or over just one
+npx rpp build papers/my-paper       # build one paper with ITS OWN build script
+npx rpp build --all --dry-run       # which papers can nobody build?
+npx rpp doctor                      # what is actually wired, and what only LOOKS wired
+npx rpp --help                      # every flag, with the reasoning
 ```
 
-🔴 **`init` ends by running `doctor`, and exits with its verdict — believe that over the absence
-of errors.** There is one declaration now, but the linter and the hooks still read it separately,
-and a guard watching an empty directory looks exactly like a guard that is working, because
-silence is its success state. `doctor` prints both directories side by side and exits non-zero
-when they are not the same. The defect that made this necessary is
-[#33](https://github.com/zernie/research-paper-pipeline/issues/33).
-
-`rpp lint` finds the declaration by walking up from the current directory, the way eslint and tsc
-find theirs, so it works from anywhere in the repository. Pass a path to lint something else for
-one run: `rpp lint papers/my-paper`.
-
-The scope always comes from one of those two, never from a default. Linting `"."` would pass over
-whatever happens to be in the checkout and report green on a scope nobody chose.
-
-The exit code is `1` when any rule reports an error, and also `1` when _nothing_ was linted —
-a clean report over zero files is not a clean report. `--json` prints machine-readable findings.
-
-(The command used to be `rpp check`. That still runs and tells you what replaced it. `check`
-elsewhere in the ecosystem — `cargo check`, `tsc --noEmit` — means "build but emit nothing", and
-building the paper is a separate job this CLI is growing.)
-
-## What else has to be on the machine
-
-`rpp lint` needs nothing but Node — it reads your files and reports. **The skills are a different
-matter**: they build PDFs, read them back, and run external checkers, so they call programs this
-package does not ship.
-
-| program                | comes from                       | which skills call it                     | what happens without it                                            |
-| ---------------------- | -------------------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
-| `pdflatex`, `bibtex`   | TeX Live                         | render-paper, submit-paper, camera-ready | no PDF is produced — loud                                          |
-| `pdfinfo`, `pdftotext` | poppler-utils                    | render-paper, submit-paper               | checks that read the built PDF report that they did not run        |
-| `texcount`             | TeX Live (`texlive-extra-utils`) | render-paper, grade-paper-writing        | the length checks cannot run                                       |
-| `checkcites`           | TeX Live                         | render-paper                             | nothing asks whether a bibliography entry is uncited               |
-| `java`                 | any JRE (21 works)               | render-paper                             | TeXtidote does not run, and **nothing else spell-checks the text** |
-| `python3`              | your system                      | the analysis and report scripts          | those scripts do not start                                         |
-| `tlmgr`                | TeX Live                         | the TeX installer itself                 | you cannot add a TeX package                                       |
-
-🔴 **Most of these fail QUIETLY**, which is why they are listed rather than left to be discovered.
-A missing checker and a passing checker look identical from outside, so every script here states in
-its last line which checks actually ran — read that line, not the exit code.
-
-### TeX Live: 298 MB, not 2.1 GB
-
-The distribution packages are the expensive way. `texlive-fonts-extra` alone is **1.69 GB**, and
-these papers use **71 MB** of it — apt cannot install less, because Debian does not split those
-font families into separate packages.
-
-So install TeX Live directly instead, by name:
-
-```sh
-bash node_modules/research-paper-pipeline/skills/render-paper/ci-install-texlive.sh ~/texlive
-export PATH="$(find ~/texlive/bin -maxdepth 1 -mindepth 1 -type d | head -1):$PATH"
-```
-
-The bin directory is named after the platform, so it is found rather than guessed — the installer
-prints the same path on its last line.
-
-41 named packages, **298 MB**, and the script verifies every file the papers actually load before
-it reports success. (The `ci-` in the name is historical — there is nothing CI-specific inside.)
-
-An apt list is kept in `skills/render-paper/ensure-toolchain.sh` for machines that cannot reach
-CTAN. It works, and it costs 2.1 GB.
-
-### The external checkers
-
-`aclpubcheck` (the official ACL format checker), TeXtidote (spelling) and `rebiber` are not TeX
-packages and not npm packages. One idempotent command installs them and then **proves each one
-starts**:
-
-```sh
-bash node_modules/research-paper-pipeline/skills/render-paper/ensure-checkers.sh
-```
+Real output, from a fixture in this repository — `node bin/rpp.mjs lint fixtures/paper-stages/wrongsize`:
 
 ```
-   ✅ aclpubcheck
-   ✅ rebiber
-   ✅ jinja2
-   ✅ textidote (/opt/textidote/textidote.jar)
-✅ all checkers are installed AND run
+/home/user/research-paper-pipeline/fixtures/paper-stages/wrongsize/PIPELINE-STATUS.md
+  1:1  error    «submitted» (2026-07-22): 352357 bytes declared, 100 on disk — this is NOT that file    paper/stages
+  1:1  error    stage «submitted» (2026-07-22) carries no frozen source. A commit reference will not do: squash and gc destroy it — three of four sources were lost that way in this corpus    paper/source
+  1:1  warning  stage «submitted» is declared, but the scorecard records no author-list run (looked for «bib-authors» in its table). …    paper/author-list
+
+✖ 3 problems (2 errors, 1 warning)
 ```
 
-It checks that the tools RUN, not that pip exited zero — `aclpubcheck --help` prints usage and
-exits zero on an interpreter where its own dependencies do not import, so "installed" and "works"
-are separate questions here.
+(Column padding trimmed to fit; the `…` marks the one message shortened. Everything else is
+verbatim.)
 
-## How the pieces fit
+`rpp lint` finds its settings by walking up from the current directory, the way eslint and tsc do,
+so it works from anywhere in the repository. The scope comes from that key or from a path you
+pass — never from a default. Linting `"."` would pass over whatever happens to be in the checkout
+and report green on a scope nobody chose.
 
-```
-   YOU + CLAUDE CODE                          THE PACKAGE
-   ───────────────────                        ───────────────────────────────────
-
-   research-ideate ─► map-prior-work ─► find-venue ─► plan-paper-timeline
-         │                                                 │
-         ▼                                                 ▼
-   build-benchmark ◄──► draft-paper ◄──► argument-arc      (loop until the argument holds)
-         │
-         ▼
-   tighten-paper ─► grade-paper-writing ─► pc-panel-review ─► harden-paper ─► submit-paper
-         │                                                                        │
-         ▼                                                                        ▼
-   camera-ready ─► extend-paper                                          (accepted? start over)
-
-   each skill WRITES a row               ┌──────────────────────────┐
-   into the scorecard ─────────────────► │ papers/<name>/           │
-                                         │   PIPELINE-STATUS.md     │
-                                         │   paper.tex / paper.md   │
-                                         │   reviews/*.md           │
-                                         │   versions/<date>-*.pdf  │
-                                         └────────────┬─────────────┘
-                                                      │
-                                    rules READ the scorecard and compare it
-                                    with the files beside it (bytes, dates, names)
-                                                      │
-                                                      ▼
-                                                  npx rpp lint
-                                              (locally, and in CI via action.yml)
-```
-
-The skills do the writing. The rules check that what was written down actually happened.
-The 3 hooks (below) sit in the editor and remind the agent to run the right skill at the
-right moment.
+The exit code is `1` when any rule reports an error, and also `1` when *nothing* was linted — a
+clean report over zero files is not a clean report. `--json` prints machine-readable findings.
 
 ## The scorecard
 
 Every paper directory carries a `PIPELINE-STATUS.md`. Its YAML front matter declares the stages
-the paper has reached. Minimal example:
+the paper has reached; the skills write rows into it as they run, and the rules read it back and
+compare it with the files beside it.
+
+```
+papers/my-paper/
+  PIPELINE-STATUS.md      the scorecard: what the paper claims to have reached
+  paper.tex | paper.md    the source
+  reviews/*.md            review notes
+  versions/<date>-*.pdf   the exact bytes that were sent, frozen
+```
 
 ```markdown
 ---
@@ -185,146 +169,59 @@ stages:
     source: versions/2026-07-22-submitted.tex
     sourceBytes: 57210
 ---
-
-# PIPELINE-STATUS
-
-| id | status | date | result |
-| ... one row per stage the skills ran ... |
 ```
 
-A template with every row explained is in `skills/paper-pipeline/references/pipeline-status-template.md`.
+**Who writes `bytes:` and `sourceBytes:`?** You do, or the agent does, once — when the stage is
+recorded. No command in this package generates or refreshes them, by design. They are not a
+checksum you maintain: a frozen PDF is never supposed to change, so `bytes:` disagreeing with the
+file means the file was replaced after it was declared, and that is precisely the finding. If you
+genuinely re-froze a stage, update the number in the same commit.
 
-## What the rules check
+## Claude Code: skills and hooks
 
-| Rule                           | Reads                   | Fails when                                                                                                     |
-| ------------------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `paper/stages`                 | `PIPELINE-STATUS.md`    | a declared stage has no PDF on disk, the byte count differs, or a frozen PDF exists with no declaration        |
-| `paper/source`                 | `PIPELINE-STATUS.md`    | a declared stage has no frozen `.tex` beside its PDF (a commit hash does not count — squash and gc destroy it) |
-| `paper/author-list`            | `PIPELINE-STATUS.md`    | a paper was submitted but the scorecard never recorded an author-list check of the bibliography                |
-| `paper/research-question`      | `paper.tex`, `paper.md` | the paper shipped without stating its research question                                                        |
-| `paper/typography`             | `paper.tex`, `paper.md` | mechanical conventions a reviewer already flagged got _worse_ (existing debt is tolerated, growth is not)      |
-| `tex/future-promise`           | `paper.tex`             | a camera-ready build still says "will be released" about something already handed over                         |
-| `tex/acm-frontmatter-override` | `paper.tex`             | an `acmart` build overrides ACM's front-matter commands and drops template elements from page 1                |
-| `review/findings-cause`        | `reviews/*.md`          | a review report lists findings but does not say which pipeline step let them through                           |
-| `doc/fields`                   | `reviews/*.md`          | a front-matter field is missing or holds a value outside the list you configured                               |
+**The two doors deliver different things.** The skills arrive with the
+**npm package** — they sit in `node_modules/research-paper-pipeline/skills/` and Claude Code reads
+them from there. `/paper-pipeline` is the entry point; it routes to the rest. The **plugin**
+carries the hook wiring and nothing else: no code, a manifest and one file,
+`plugin/hooks/hooks.json`. The hooks call the runtime the npm install already put in your project,
+which is why the plugin can stay empty. (Why it has to be this way — measured — is in
+[`docs/install.md`](docs/install.md).)
 
-Errors fail the run. Warnings print and do not. Three more rules guard the package's own code
-and do not run on your papers.
+So `npm i` gives you the skills, the rules and the CLI; two lines inside Claude Code give you the
+hooks:
 
-## The declaration
+```
+/plugin marketplace add zernie/research-paper-pipeline
+/plugin install research-paper-pipeline@research-paper-pipeline
+```
 
-One key in your `package.json`, written by `rpp init`. It holds the facts only your repository can
-supply — nothing in it is guessable by a package that has never seen your corpus.
+**One of the three is a gate; the other two only print.**
 
-It lives there rather than in a file of its own because of a count: the `package.json` key has
-**five** readers — the three editor hooks, the ESLint helper, the skill scripts — and a separate
-config file had **one**, the CLI. A hook cannot import code and cannot walk up a tree looking for
-a config; it can read a path it is able to name, and the one path it can always name is the
-project's `package.json`.
+| Hook | Blocks? | When | What it does |
+| ---- | ------- | ---- | ------------ |
+| `paper-edit-guard` | **yes** — denies the command | before a Bash command | refuses a Bash write to a paper source, because it would skip every check that hangs on Edit/Write. Also denies while the settings key is unparseable |
+| `paper-skills-nudge` | no — always exits 0 | after an Edit/Write on a paper | puts the pre-submit checklist in front of the agent (about 1.3 KB of context on a paper edit, nothing on any other file) |
+| `paper-status-gates` | no — always exits 0 | after an Edit/Write on a paper | reads that paper's scorecard and lists the stages that have not run yet |
 
-`rpp lint` looks for it in the current directory and then upwards, and prints which file it found.
-`--config <file>` overrides the search.
+The two reminders are `react` hooks, whose type has no way to deny at all — they cannot block even
+by mistake.
+
+## Configuration
+
+One key in your `package.json`, written by `rpp init`:
 
 ```json
 {
   "research-paper-pipeline": {
-    "papers": "papers",
-    "authorListCommand": "node scripts/bib-authors.mjs",
-    "typographyDebt": { "papers/my-paper": { "sectionSign": 12 } },
-    "docFields": { "read": { "values": ["full", "abstract", "none"] } },
-    "reviewSince": "2026-08-23",
-    "minFindings": 3,
-    "causeMarker": "Cause:"
+    "papers": "papers"
   }
 }
 ```
 
-⚠️ **`rpp.json` is deprecated and still read.** Earlier versions of `init` created it; `init` no
-longer does, and a run that reads one says so on its first line. The hooks never read it, so
-leaving settings there is how the linter and the guard end up watching different directories —
-`rpp init` copies the value across for you.
-
-| key                 | required | what it is                                                                         |
-| ------------------- | -------- | ---------------------------------------------------------------------------------- |
-| `papers`            | **yes**  | the directory your papers live in, relative to the file holding it. One string or a list. |
-| `structure`         | no       | which files every paper directory must contain — see below. `false` turns it off.  |
-| `authorListCommand` | no       | prints the author list from your `.bib`, so a rule can compare it with the PDF     |
-| `typographyDebt`    | no       | per-paper allowance of existing typography findings, so the count can only go down |
-| `docFields`         | no       | front-matter fields your review notes must carry, and the values each may hold     |
-| `reviewSince`       | no       | ignore review findings filed before this date                                      |
-| `minFindings`       | no       | how many findings a cold read must produce before it counts as a cold read         |
-| `causeMarker`       | no       | the word your review notes use to introduce a cause, e.g. `Cause:`                 |
-
-`papers` is required because the scope is the one thing that must not default: a default of `"."`
-turns every run into a green report over the whole checkout. `rpp init` fills it by measuring —
-and when nothing on disk looks like a papers directory, it writes the documented default and says
-in the same breath that it is a guess.
-
-## Building a paper
-
-```sh
-npx rpp build papers/my-paper     # one paper — the target is named, like `make` or `docker build`
-npx rpp build --all               # every paper under `papers`; opt-in, never the default
-npx rpp build --all --dry-run     # name the script that WOULD run, and where none exists
-```
-
-`rpp build` does not compile anything itself. It finds the paper's **own** build script and runs
-it, because building a paper is not a generic loop: one paper in the corpus this was written
-against needs `TEXINPUTS` pointing at venue files its preamble `\input`s, another runs a dozen
-compiles hunting the right position for `\balance`. A package that has never seen your paper
-cannot know either.
-
-It looks for these, in order, and the first one found wins:
-
-| path                        |                                                        |
-| --------------------------- | ------------------------------------------------------ |
-| `build.sh`                  | in the paper directory — what you see when you open it |
-| `repro/build-submission.sh` | the reproduction-artifact convention                   |
-
-Override with `"buildScripts": [...]` in the declaration.
-
-**A paper with no build script is a FAILURE, not a skip**, and that is the whole point of the
-command. The corpus this came from had a CI loop looking for `repro/build-submission.sh` while the
-accepted paper shipped `build.sh`; the mismatch read as "nothing to build", and the paper reached
-its venue without a single paper job having run on it. `--dry-run` answers "which papers can
-nobody build?" in a second, without spending twenty compiles to ask.
-
-## Required files
-
-A rule runs on a file it was handed. A file that is missing is never handed to anything — so no
-rule can report it, and a paper directory without `PIPELINE-STATUS.md` gets **zero** rules and a
-clean report. `rpp lint` therefore checks presence itself, before ESLint runs.
-
-Detection is generous and requirements are strict, on purpose. A directory counts as a paper only
-once it already holds one of the marker files, so `research/`, `plans/` and other neighbours in
-the corpus are left alone; an error-level check that fires on a correct tree gets switched off,
-and the real findings leave with it.
-
-```json
-"structure": {
-  "markers":      ["PIPELINE-STATUS.md", "paper.tex", "paper.md", "venue.json"],
-  "require":      ["PIPELINE-STATUS.md"],
-  "requireOneOf": [["paper.tex", "paper.md"]],
-  "ignore":       []
-}
-```
-
-Those are the defaults; you only write the block to change them. They were measured against a
-real five-paper corpus rather than chosen — it passes with zero findings, while adding
-`paper.pdf` to `require` produces two findings on papers that are perfectly fine, which is why it
-is not there.
-
-This is the half [ls-lint](https://ls-lint.org/) cannot do. ls-lint judges the **names** of files
-that exist; it has nothing to compare against for a file that does not. Use both: ls-lint for
-"what is there is named right", this for "what must be there is there".
-
-- `authorListCommand` — the command `paper/author-list` tells you to run when the check is missing.
-- `typographyDebt` — per-paper counts of known typography issues; the rule stays quiet at or below them.
-- `docFields` — required front-matter fields in review files and their allowed values.
-- `reviewSince` — only review files created on or after this date are checked.
-- `minFindings` — a review with fewer findings than this is not required to name causes.
-- `causeMarker` — the phrase a review uses to name a cause (default `Cause:`). Set it to
-  whatever your reviews actually write, in any language.
+`papers` is the only required setting, and it has no default on purpose. Eight optional keys tune
+the author-list command, typography debt, review front-matter fields and the build-script lookup —
+all of them, with the required-files block, are in
+[`docs/configuration.md`](docs/configuration.md).
 
 ## In CI
 
@@ -336,81 +233,21 @@ The repository ships a GitHub composite action. Add one step:
     paths: papers
 ```
 
-The action runs `rpp lint`, so CI and your terminal execute the same code — including the
-required-files check and the declaration. `paths` is required, and the job refuses to pass when zero
-files were linted, so a typo in the path shows up red instead of green. Optional inputs: `config`
-(a path to the file holding the settings, only when the upward search cannot reach it), `max-warnings` (default `-1`,
-warnings never fail the job), `texcount` (default `true`; set to `false` if you have no `texcount/*` rules of your
-own — this package ships none), `working-directory`.
+Same sha situation as the install: no tag exists, so pin a commit. It runs `rpp lint`, so CI and
+your terminal execute the same code. `paths` is required, and the job refuses to pass when zero
+files were linted, so a typo in the path shows up red instead of green. Optional inputs: `config`,
+`max-warnings` (default `-1`), `texcount` (default `true`), `working-directory`.
 
-## Skills and hooks in Claude Code
+## Documentation
 
-**The two doors deliver different things, and it is worth knowing which is which.** The
-<!-- count:skills -->24 skills arrive with the **npm package** — they sit in
-`node_modules/research-paper-pipeline/skills/`, and Claude Code reads them from there. The
-**plugin** carries the hook wiring and nothing else: `plugin/` holds one file, `hooks/hooks.json`,
-and its manifest says so — *"this plugin carries no code and no dependencies on purpose"*. The
-hooks call the runtime that the npm install already put in your project, which is why the plugin
-can stay empty.
-
-That split is deliberate, and it is also forced: a plugin fetched from npm gets **no**
-`node_modules` at all, silently — `npm pack` strips `package-lock.json` unconditionally, and the
-host runs `npm ci` only when a lockfile is present in the fetched copy (measured 2026-09-19,
-scripts in [`docs/prior-art/repro/`](docs/prior-art/repro/README.md)). A plugin that carried the
-skills would therefore carry scripts it could not run.
-
-So: `npm i` gives you the skills, the rules and the CLI. Then two lines inside Claude Code give
-you the hooks:
-
-```
-/plugin marketplace add zernie/research-paper-pipeline
-/plugin install research-paper-pipeline@research-paper-pipeline
-```
-
-`/paper-pipeline` is the entry point to the skills; it routes to the rest. The three hooks:
-
-| Hook                 | When                           | What it does                                                                                             |
-| -------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `paper-edit-guard`   | before a Bash command          | blocks writing a paper source from Bash, because a Bash write skips every check that hangs on Edit/Write |
-| `paper-skills-nudge` | after an Edit/Write on a paper | shows the agent the pre-submit checklist                                                                 |
-| `paper-status-gates` | after an Edit/Write on a paper | reads that paper's scorecard and lists the gates that have not run yet                                   |
-
-The hooks look for papers under `papers/`. To use another directory, declare it once in your
-`package.json`:
-
-```json
-{ "research-paper-pipeline": { "papers": "docs/papers" } }
-```
-
-## How reliable are the checks
-
-Every rule is tested two ways: it has to catch a planted mistake, and it has to stay quiet on a
-correct file. Both halves matter, because a broken check and a clean file look identical from
-the outside. The test suite also deletes one load-bearing line from each rule and confirms the
-right test goes red.
-
-<details>
-<summary>Already have an ESLint config? Use the rules directly</summary>
-
-Under the hood `rpp lint` builds an ESLint flat config and runs it. If your repository already
-lints with ESLint, you can import the rule modules from `research-paper-pipeline/eslint-rules/`
-and wire them yourself; `bin/rpp.mjs` exports `buildConfig(options, texLanguage)` that returns
-the exact config the CLI uses, so the shortest path is:
-
-```js
-// eslint.config.mjs
-import { buildConfig } from "research-paper-pipeline/bin/rpp.mjs";
-import { texLanguage } from "research-paper-pipeline/eslint-rules/latex-language.mjs";
-export default buildConfig({ minFindings: 3 }, texLanguage);
-```
-
-Then point the CI action's `config` input at that file.
-
-</details>
-
-## Contributing
-
-Layout, test commands, and how to add a rule or a skill are in `CONTRIBUTING.md`.
+| file | what is in it |
+| --- | --- |
+| [`docs/toolchain.md`](docs/toolchain.md) | the external programs the skills call, and how to install TeX Live by package name |
+| [`docs/configuration.md`](docs/configuration.md) | every setting, the required-files block, build-script lookup, using the rules from your own ESLint config |
+| [`docs/install.md`](docs/install.md) | why the install is shaped this way, and why the plugin ships no code — a decision record, measured |
+| [`docs/prior-art/`](docs/prior-art/README.md) | how comparable tools are shaped, with the URLs that were checked |
+| [`docs/incidents.md`](docs/incidents.md) | what broke, measured |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | layout, test commands, how to add a rule or a skill |
 
 ## License
 

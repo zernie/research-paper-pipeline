@@ -143,3 +143,42 @@ answer; it now takes the default. Prompting itself turned out to be perfectly te
 question function is injected, so the assertions never need a terminal, and the one property
 that does need a terminal (that a real prompt appears and its answer is used) was checked once
 by hand under `script`.
+
+## Which package managers are covered, and why Yarn PnP is not
+
+Moved out of the README on 2026-09-19: a reader deciding whether to try the tool needs the
+verdict, not the forensics. The verdict is that npm and pnpm are covered and Yarn Plug'n'Play is
+not supported.
+
+`npm run test:install` packs the tarball, installs it into a clean consumer project with each
+manager that is actually present on the machine (`npm --version`, `pnpm --version` — a manager
+that does not launch is not counted), and then **runs the hook command** to see whether it
+resolves. The check is deliberately not a grep over `hooks.json`: the string there is correct
+under any manager, while whether it resolves is a property of the tree the manager laid out on
+disk. The verdict is whether the command died on `Cannot find module`.
+
+This matters because one decision has already diverged between the repository's own tree and a
+consumer's: moving `vigiles` from peer to regular dependencies works on npm and does not work on
+pnpm, because the hook wiring addresses the runtime from the project root and pnpm does not put
+transitive dependencies at the root. No test found that.
+
+**Yarn Plug'n'Play is excluded by construction, not by omission.** The hook commands in
+`plugin/hooks/hooks.json` name
+`${CLAUDE_PROJECT_DIR}/node_modules/research-paper-pipeline/bin/rpp.mjs` literally, and under PnP
+there is no `node_modules` directory for that path to resolve against. Supporting it would mean a
+different way of answering "where is the runtime", not a flag.
+
+## Why the plugin ships no code
+
+The plugin carries the hook wiring only — a manifest and `plugin/hooks/hooks.json`. That split is
+deliberate, and it is also forced.
+
+A plugin fetched from npm gets **no** `node_modules` at all, and gets them silently: `npm pack`
+strips `package-lock.json` unconditionally, and the host runs `npm ci` only when a lockfile is
+present in the fetched copy. Measured 2026-09-19; the probes are in
+[`prior-art/repro/`](prior-art/repro/README.md). A plugin that carried the skills would therefore
+carry scripts it could not run — the failure arriving as `Cannot find module` at hook time, on a
+plugin that installed cleanly.
+
+So the skills ride with the npm package, where a real install has happened, and the plugin stays
+empty enough that it cannot have this problem.
