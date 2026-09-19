@@ -45,7 +45,10 @@ academic skill suites". Different question, deliberately not merged.
 
 ## Status
 
-Written 2026-09-19 from first-hand fetches of the sources cited in each file. A separate design
-pass proposing concrete options for the package's shape is being run against these notes; when
-it lands it goes beside them rather than inside them, because a proposal and its evidence age at
-different rates.
+Written 2026-09-19 from first-hand fetches of the sources cited in each file.
+
+The design pass run against these notes landed the same day:
+[`../package-shape-options.md`](../package-shape-options.md) — four options for the package's
+shape, a ranking, and four premise corrections that came out of it. It sits BESIDE this folder,
+not inside it, because a proposal and its evidence age at different rates: these notes stay true
+as long as the tools they cite do; that proposal expires the moment a shape is chosen.
