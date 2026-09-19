@@ -145,7 +145,7 @@ the claim falsifiable: *TEXT* invites "then write it", and *IMMOVABLE* invites "
 🔴 **A deadline is a constraint on how much you rework, never an argument for the current form.** If
 the author invokes it against a TEXT prong, that is the failure this section exists to catch.
 
-**Enforced** by `paper-pipeline/scripts/pipeline-check.mjs` → `ceiling-unplanned`: a ceiling recorded
+**Enforced** by `skills/paper-pipeline/scripts/pipeline-check.mjs` → `ceiling-unplanned`: a ceiling recorded
 in the scorecard whose prongs carry none of the three labels is a finding.
 
 ## Record the verdict

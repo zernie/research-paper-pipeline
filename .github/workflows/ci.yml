@@ -110,6 +110,15 @@ jobs:
         run: npm i -g @anthropic-ai/claude-code
         timeout-minutes: 3
 
+      # The manifest is judged by the HOST'S validator, not by a schema we wrote from the docs.
+      # Measured 2026-09-19: the npm-source shape a design note had recorded is rejected, and the
+      # accepted one nests `source` as an object. Since the wrong shape exits nonzero, a gate makes
+      # it unshippable. Placed right after the install because the script FAILS when the binary is
+      # missing rather than skipping — a gate that passes without its tool is a false green.
+      - name: npm run check:marketplace
+        run: npm run check:marketplace
+        timeout-minutes: 2
+
       # 🔴 `--no-skip` HERE, AND PRECISELY AFTER THE INSTALL ABOVE. Measurement 17.09: without it,
       # skip is green, and `skip` status is applied not only to author-declared `skip()`, but also to a file
       # that failed to LOAD. In other words, one flag closes both doors at once.

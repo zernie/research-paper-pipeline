@@ -101,6 +101,13 @@ Read against the four tools above, those are one problem, not two:
 
 3. **Nothing pins the content** the way `pre-commit`'s `rev:` does.
 
+➕ **Correction, 2026-09-19.** Point 1 above stands; the framing around it does not. The
+`README.md` sentence this note quoted — "that installs all 24 skills" — has been fixed, and the
+plugin carrying no skills turns out to be **deliberate and forced**, not an oversight: a plugin
+fetched from npm gets no `node_modules`, so a plugin that shipped the skills would ship scripts it
+could not run. The npm door delivers the skills; the plugin door delivers the hook wiring. What
+remains a real problem is the paths written inside the skills.
+
 Three directions follow, and they are genuinely different bets rather than one idea:
 
 - **One channel.** Skills ship only through npm; the plugin carries hooks and says so. Cheapest;

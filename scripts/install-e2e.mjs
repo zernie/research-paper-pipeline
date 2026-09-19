@@ -22,6 +22,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import {
   mkdtempSync,
   mkdirSync,
+  readdirSync,
   writeFileSync,
   rmSync,
   existsSync,
@@ -104,6 +105,53 @@ function hookCommands(consumer) {
   if (cmds.length === 0)
     return { err: "zero commands in hooks.json — there is nothing to check" };
   return { cmds };
+}
+
+/**
+ * 🔴 WHAT ARRIVED, COUNTED AGAINST WHAT EXISTS — not against a number written here.
+ *
+ * The README claims the install brings the skills. Until now nothing checked it: the only
+ * delivery assertion was that `plugin/hooks/hooks.json` reached the tarball, so a package that
+ * shipped ZERO skills would have passed a test written for exactly that defect. A hardcoded
+ * count would be no better — it would go stale the first time a skill is added, and the staleness
+ * would read as a pass.
+ *
+ * The second half is the one that catches the real class: a skill that names a script by a path
+ * which only resolves from one working directory. That path is correct in the repository and
+ * absent in the consumer, which is why reading the prose never finds it.
+ */
+function contentDelivery(consumer) {
+  const installed = join(consumer, "node_modules", "research-paper-pipeline");
+  const listSkills = (root) => {
+    const dir = join(root, "skills");
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(dir, d.name, "SKILL.md")))
+      .map((d) => d.name);
+  };
+  const here = listSkills(ROOT);
+  const there = listSkills(installed);
+  const missing = here.filter((n) => !there.includes(n));
+
+  // Resolve every script a delivered SKILL.md names, from the consumer's tree.
+  const unresolved = [];
+  let refs = 0;
+  for (const name of there) {
+    const body = readFileSync(join(installed, "skills", name, "SKILL.md"), "utf8");
+    for (const m of body.matchAll(/([\w./-]*scripts\/[\w-]+\.mjs)/g)) {
+      refs++;
+      const raw = m[1];
+      const candidates = [
+        join(installed, raw),
+        join(installed, "skills", name, raw),
+        // The install-path spelling the port rule exists to retire; counted as resolvable only
+        // if the file is genuinely there under `skills/`.
+        join(installed, raw.replace(/^\.claude\/skills\//, "skills/")),
+      ];
+      if (!candidates.some(existsSync)) unresolved.push(`${name}: ${raw}`);
+    }
+  }
+  return { here: here.length, there: there.length, missing, refs, unresolved };
 }
 
 const results = [];
@@ -239,6 +287,21 @@ try {
       if (resolved === cmds.length)
         ok(`all ${cmds.length} hook command(s) resolve`);
     }
+
+    // Content delivery: the skills, and the paths inside them.
+    const d = contentDelivery(consumer);
+    d.missing.length === 0 && d.there === d.here
+      ? ok(`all ${d.here} skill(s) arrived`)
+      : bad(
+          `all ${d.here} skill(s) arrived`,
+          `${d.there} arrived; missing: ${d.missing.join(", ") || "(count differs without a named gap)"}`,
+        );
+    d.unresolved.length === 0
+      ? ok(`all ${d.refs} script path(s) named by skills resolve in the consumer`)
+      : bad(
+          `all ${d.refs} script path(s) named by skills resolve in the consumer`,
+          [...new Set(d.unresolved)].slice(0, 5).join("\n"),
+        );
 
     results.push({ manager: `${m.name} ${m.version}`, fail });
     console.log("");

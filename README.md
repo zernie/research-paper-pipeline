@@ -345,16 +345,29 @@ own — this package ships none), `working-directory`.
 
 ## Skills and hooks in Claude Code
 
-The skills and hooks are delivered as a Claude Code plugin. Its runtime came with this package,
-so there is nothing else to install — type these inside Claude Code:
+**The two doors deliver different things, and it is worth knowing which is which.** The
+<!-- count:skills -->24 skills arrive with the **npm package** — they sit in
+`node_modules/research-paper-pipeline/skills/`, and Claude Code reads them from there. The
+**plugin** carries the hook wiring and nothing else: `plugin/` holds one file, `hooks/hooks.json`,
+and its manifest says so — *"this plugin carries no code and no dependencies on purpose"*. The
+hooks call the runtime that the npm install already put in your project, which is why the plugin
+can stay empty.
+
+That split is deliberate, and it is also forced: a plugin fetched from npm gets **no**
+`node_modules` at all, silently — `npm pack` strips `package-lock.json` unconditionally, and the
+host runs `npm ci` only when a lockfile is present in the fetched copy (measured 2026-09-19,
+scripts in [`docs/prior-art/repro/`](docs/prior-art/repro/README.md)). A plugin that carried the
+skills would therefore carry scripts it could not run.
+
+So: `npm i` gives you the skills, the rules and the CLI. Then two lines inside Claude Code give
+you the hooks:
 
 ```
 /plugin marketplace add zernie/research-paper-pipeline
 /plugin install research-paper-pipeline@research-paper-pipeline
 ```
 
-That installs all 24 skills (`/paper-pipeline` is the entry point; it routes to the rest) and
-three hooks:
+`/paper-pipeline` is the entry point to the skills; it routes to the rest. The three hooks:
 
 | Hook                 | When                           | What it does                                                                                             |
 | -------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------- |
