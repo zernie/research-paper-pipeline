@@ -87,7 +87,7 @@ function stageCorpus(root) {
   writeFileSync(join(paper, "paper.md"), "# Intro\n\nRQ1: does it hold?\n");
   writeFileSync(
     join(paper, "PIPELINE-STATUS.md"),
-    `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: 100\n    source: versions/s.tex\n    sourceBytes: 4\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`,
+    `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: 100\n    source: versions/s.tex\n    sourceBytes: 4\nresearchQuestion: "does it hold?"\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`,
   );
   // The real LaTeX half. Copied from this repository's own fixture rather than written inline:
   // a second inline copy of an acmart preamble would drift from the one the build e2e compiles,

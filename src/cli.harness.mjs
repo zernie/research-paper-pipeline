@@ -167,7 +167,7 @@ check(
     writeFileSync(join(paper, "paper.md"), "# Intro\n\nRQ1: does it hold?\n");
     writeFileSync(
       join(paper, "PIPELINE-STATUS.md"),
-      `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: 100\n    source: versions/s.tex\n    sourceBytes: 4\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`,
+      `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: 100\n    source: versions/s.tex\n    sourceBytes: 4\nresearchQuestion: "does it hold?"\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`,
     );
     writeFileSync(
       join(root, "package.json"),
@@ -581,7 +581,7 @@ check(
       "x".repeat(100),
     );
     const status = (bytes) =>
-      `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: ${bytes}\n    source: versions/s.tex\n    sourceBytes: 4\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`;
+      `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: ${bytes}\n    source: versions/s.tex\n    sourceBytes: 4\nresearchQuestion: "does it hold?"\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`;
     writeFileSync(join(paper, "versions", "s.tex"), "abcd");
     writeFileSync(join(paper, "paper.md"), "# Intro\n\nRQ1: does it hold?\n");
 
@@ -670,7 +670,7 @@ check(
     );
     writeFileSync(join(paper, "paper.md"), "# Intro\n\nRQ1: does it hold?\n");
     const status = (bytes) =>
-      `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: ${bytes}\n    source: versions/s.tex\n    sourceBytes: 4\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`;
+      `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: ${bytes}\n    source: versions/s.tex\n    sourceBytes: 4\nresearchQuestion: "does it hold?"\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`;
     writeFileSync(join(paper, "PIPELINE-STATUS.md"), status(100));
 
     // findConfig — kept separate from the run so the failure is distinguishable
@@ -774,7 +774,7 @@ check(
     );
     writeFileSync(
       join(paper, "PIPELINE-STATUS.md"),
-      `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: 100\n    source: versions/s.tex\n    sourceBytes: 4\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`,
+      `---\nstages:\n  - stage: submitted\n    date: 2026-07-22\n    pdf: versions/2026-07-22-submitted.pdf\n    bytes: 100\n    source: versions/s.tex\n    sourceBytes: 4\nresearchQuestion: "does it hold?"\n---\n# S\n\n| id | note |\n|---|---|\n| cites | bib-authors run |\n`,
     );
     writeFileSync(join(root, "rpp.json"), JSON.stringify({ papers: "papers" }));
 
