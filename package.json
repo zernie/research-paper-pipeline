@@ -22,17 +22,17 @@
     "@eslint/plugin-kit": "^0.7.2",
     "@unified-latex/unified-latex-util-parse": "^1.8.4",
     "eslint": "^10.9.1",
-    "js-yaml": "^4.1.0",
-    "markdown-it": "^14.3.0",
+    "js-yaml": "^5.4.2",
+    "markdown-it": "^15.0.2",
     "vigiles": "^27.3.0"
   },
   "devDependencies": {
-    "@retorquere/bibtex-parser": "^10.0.1",
+    "@retorquere/bibtex-parser": "^11.0.0",
     "@types/node": "^26.6.1",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   },
   "peerDependencies": {
-    "@retorquere/bibtex-parser": "^10.0.1"
+    "@retorquere/bibtex-parser": "^11.0.0"
   },
   "peerDependenciesMeta": {
     "@retorquere/bibtex-parser": {
