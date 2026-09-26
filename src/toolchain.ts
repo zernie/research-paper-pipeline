@@ -45,6 +45,7 @@ import { join } from "node:path";
 import {
   isExecutable,
   missingTools,
+  missingDependencies,
   probeTree,
   supportedPlatform,
   type Runner,
@@ -240,14 +241,20 @@ function yearAfter(lines: readonly string[], label: string): string | null {
     : null;
 }
 
-/** What a tree lacks: packages by `kpsewhich`, tools by executable. */
+/**
+ * What a tree lacks: the venue's packages by `kpsewhich`, tools by executable, and packages the
+ * tree's own database depends on but never installed (`tlmgr check depends`).
+ */
 export interface Gaps {
   readonly packages: readonly string[];
   readonly tools: readonly string[];
+  readonly dependencies: readonly string[];
 }
 
 export const noGaps = (g: Gaps): boolean =>
-  g.packages.length === 0 && g.tools.length === 0;
+  g.packages.length === 0 &&
+  g.tools.length === 0 &&
+  g.dependencies.length === 0;
 
 /** `acmart (acmart.cls), texcount (texcount)` — a gap named with the file that proves it. */
 export function describeGaps(g: Gaps, tex: TexRequirements): string {
@@ -258,6 +265,9 @@ export function describeGaps(g: Gaps, tex: TexRequirements): string {
   return [
     ...named(g.packages, tex.packages),
     ...named(g.tools, tex.tools),
+    ...g.dependencies.map(
+      (d) => `${d} (a TeX Live dependency the install left out)`,
+    ),
   ].join(", ");
 }
 
@@ -296,6 +306,7 @@ export function gapsOf(
   return {
     packages: probeTree(tree.bin, tex.packages, run),
     tools: missingTools(tex.tools, tree.bin),
+    dependencies: missingDependencies(tree.bin, run),
   };
 }
 
@@ -460,7 +471,8 @@ export function installPackages(
   let last: string[] = [];
   for (const mirror of mirrors) {
     if (noGaps(gaps)) break;
-    const want = [...gaps.packages, ...gaps.tools];
+    const want = [...gaps.packages, ...gaps.tools, ...gaps.dependencies];
+    const repairsBase = gaps.dependencies.length > 0;
     io.log(`  tlmgr: installing ${want.length} package(s) from ${mirror}…`);
     const r = io.run(
       join(tree.bin, "tlmgr"),
@@ -481,6 +493,10 @@ export function installPackages(
         ],
       };
     last = tail(r);
+    // A dependency of the base was missing, so the formats it feeds were never built (pdflatex dies
+    // before writing a log without them). Build the missing ones now that the package is in.
+    if (repairsBase)
+      io.run(join(tree.bin, "fmtutil-sys"), ["--missing"], quiet(io, TLMGR_MS));
     gaps = gapsOf(tree, tex, io.run);
   }
   return { ok: true, value: { gaps, tail: last } };
@@ -688,9 +704,17 @@ function report(o: Resolved, tree: CachedTree | null): number {
     o.log(binLine(tree));
     return 0;
   }
-  const count = gaps.packages.length + gaps.tools.length;
+  const declared = gaps.packages.length + gaps.tools.length;
+  // A dependency the install left out is not one of the venue's declared packages: counted apart,
+  // so the line never reads "lacks 0 of 51" followed by a name.
+  const what = [
+    ...(declared ? [`${declared} of ${n} declared packages`] : []),
+    ...(gaps.dependencies.length
+      ? [`${gaps.dependencies.length} TeX Live base package(s)`]
+      : []),
+  ].join(" and ");
   o.log(
-    `✗ TeX Live ${tree.year} in ${tree.dir} lacks ${count} of ${n} declared packages: ${describeGaps(gaps, o.tex)}`,
+    `✗ TeX Live ${tree.year} in ${tree.dir} lacks ${what}: ${describeGaps(gaps, o.tex)}`,
   );
   o.log(`  run \`npx paperlint toolchain\` to install them`);
   return 1;

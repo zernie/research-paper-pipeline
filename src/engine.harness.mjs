@@ -28,6 +28,7 @@ const {
   whichOnPath,
   isExecutable,
   probeTree,
+  missingDependencies,
   supportedPlatform,
 } = await import(join(HERE, "engine.ts"));
 
@@ -250,5 +251,54 @@ check(
     rmSync(bin, { recursive: true, force: true });
   }
 }
+
+// ── missingDependencies: what an install that "continued anyway" left out ──────────────────
+// Real stdout of `tlmgr check depends` on a tree whose install-tl lost unicode-data to a mirror
+// (2026-09-26): the pdflatex format could not be built, yet every venue .sty was present.
+// Byte for byte: tlmgr opens every section header with a FORM FEED, then a space.
+const BROKEN_DEPENDS =
+  "\f DEPENDS WITHOUT PACKAGES:\n" +
+  "unicode-data in: collection-basic latex-bin luahbtex luatex\n" +
+  "\f PACKAGES NOT IN ANY COLLECTION: acmart booktabs caption\n";
+{
+  const calls = [];
+  const run = (cmd, args) => {
+    calls.push([cmd, args]);
+    return {
+      stdout: BROKEN_DEPENDS,
+      stderr: "tlmgr: An error has occurred.",
+      status: 2,
+    };
+  };
+  const missing = missingDependencies("/tl/bin", run);
+  check(
+    "missingDependencies: asks THAT tree's tlmgr `check depends`",
+    calls.length === 1 &&
+      calls[0][0] === "/tl/bin/tlmgr" &&
+      JSON.stringify(calls[0][1]) === '["check","depends"]',
+    JSON.stringify(calls),
+  );
+  // Guards: a package the tree's own database requires but never installed is a gap.
+  check(
+    "🔴 missingDependencies: names the dependency the install dropped",
+    JSON.stringify(missing) === '["unicode-data"]',
+    JSON.stringify(missing),
+  );
+}
+check(
+  "missingDependencies: packages outside any collection are not gaps",
+  JSON.stringify(
+    missingDependencies("/tl/bin", () => ({
+      stdout: "\f PACKAGES NOT IN ANY COLLECTION: acmart booktabs\n",
+      status: 2,
+    })),
+  ) === "[]",
+);
+check(
+  "missingDependencies: a clean tree has none",
+  JSON.stringify(
+    missingDependencies("/tl/bin", () => ({ stdout: "", status: 0 })),
+  ) === "[]",
+);
 
 console.log(`engine: ${n} checks passed`);

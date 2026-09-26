@@ -3,3 +3,4 @@ acmart acmart.cls
 libertine libertine.sty
 texcount bin:texcount
 liar other.sty
+unicode-data GraphemeBreakProperty.txt

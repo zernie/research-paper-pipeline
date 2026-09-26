@@ -163,14 +163,19 @@ for (const f of [
   "stub-pdflatex",
   "stub-kpsewhich",
   "stub-tlmgr",
+  "stub-fmtutil-sys",
   "release-texlive.txt",
 ])
   copyFileSync(join(FIXTURE, f), join(staging, f));
 spawnSync("chmod", [
   "+x",
-  ...["install-tl", "stub-pdflatex", "stub-kpsewhich", "stub-tlmgr"].map((f) =>
-    join(staging, f),
-  ),
+  ...[
+    "install-tl",
+    "stub-pdflatex",
+    "stub-kpsewhich",
+    "stub-tlmgr",
+    "stub-fmtutil-sys",
+  ].map((f) => join(staging, f)),
 ]);
 spawnSync(
   "tar",
@@ -191,6 +196,10 @@ writeFileSync(
 );
 const url = (dir) => pathToFileURL(dir).href;
 const MISSING = url(join(work, "no-such-mirror"));
+
+/** A call that downloads or installs. `tlmgr check depends` only reads, so it is not one. */
+const installs = (c) =>
+  c.cmd === "curl" || (c.cmd.endsWith("tlmgr") && c.args.includes("install"));
 
 /** A `spawnSync` that records every program it was asked to run. */
 const recorder = () => {
@@ -364,8 +373,33 @@ const cmd = ({ banal = BANAL, ...over } = {}) => {
   );
   check(
     "second run: downloads nothing and installs nothing",
-    !r.calls.some((c) => c.cmd === "curl" || c.cmd.endsWith("tlmgr")),
-    JSON.stringify(r.calls.map((c) => c.cmd)),
+    !r.calls.some(installs),
+    JSON.stringify(r.calls.map((c) => [c.cmd, ...c.args])),
+  );
+}
+// Guards: a tree with every venue package can still be broken. install-tl that lost a package
+// to a mirror prints "continuing anyway"; seen 2026-09-26 with unicode-data, after which the
+// pdflatex format was never built and every build died before writing a log.
+{
+  const tree = join(root, "2026");
+  writeFileSync(join(tree, "missing-deps.txt"), "unicode-data\n");
+  const check1 = cmd({ check: true });
+  check(
+    "🔴 a dropped base dependency: --check does not call the tree complete",
+    check1.code === 1,
+    `${check1.out}\n${check1.err}`,
+  );
+  const r = cmd();
+  check(
+    "🔴 a dropped base dependency: the run installs it, then builds the missing formats",
+    r.code === 0 &&
+      readFileSync(join(tree, "tlmgr.log"), "utf8").includes("unicode-data") &&
+      readFileSync(join(tree, "fmtutil.log"), "utf8").trim() === "--missing",
+    `${r.out}\n${r.err}`,
+  );
+  check(
+    "a dropped base dependency: the tree is whole afterwards",
+    readFileSync(join(tree, "missing-deps.txt"), "utf8").trim() === "",
   );
 }
 {
@@ -500,6 +534,7 @@ const mirrorFor = (name, year, installerYear = year) => {
     "stub-pdflatex",
     "stub-kpsewhich",
     "stub-tlmgr",
+    "stub-fmtutil-sys",
   ])
     copyFileSync(join(staging, f), join(stage, f));
   writeFileSync(
@@ -544,7 +579,7 @@ check(
       r.out.includes("TeX Live 2026") &&
       r.out.includes("nothing to do") &&
       !existsSync(join(years, "2027")) &&
-      !r.calls.some((c) => c.cmd === "curl" || c.cmd.endsWith("tlmgr")),
+      !r.calls.some(installs),
     `${r.out}\n${JSON.stringify(r.calls.map((c) => c.cmd))}`,
   );
 }

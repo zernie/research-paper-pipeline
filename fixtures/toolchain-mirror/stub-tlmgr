@@ -9,6 +9,15 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --repository) repo=$2; shift 2 ;;
     install) shift; break ;;
+    # `check depends` in tlmgr's own layout: every name in missing-deps.txt (what the stub
+    # install-tl was told to drop) is a dependency without a package. Not logged: it installs nothing.
+    check)
+      if [ -s "$tree/missing-deps.txt" ]; then
+        echo " DEPENDS WITHOUT PACKAGES:"
+        sed 's/$/ in: collection-basic latex-bin/' "$tree/missing-deps.txt"
+        exit 2
+      fi
+      exit 0 ;;
     *) shift ;;
   esac
 done
@@ -34,6 +43,8 @@ for p in "$@"; do
     status=1
     continue
   fi
+  # Installing a dropped dependency repairs the tree.
+  [ -f "$tree/missing-deps.txt" ] && sed -i "/^$p\$/d" "$tree/missing-deps.txt"
   for item in ${line#* }; do
     case "$item" in
       bin:*) : > "$bin/${item#bin:}"; chmod +x "$bin/${item#bin:}" ;;
