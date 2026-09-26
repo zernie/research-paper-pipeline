@@ -44,7 +44,11 @@ for p in "$@"; do
     continue
   fi
   # Installing a dropped dependency repairs the tree.
-  [ -f "$tree/missing-deps.txt" ] && sed -i "/^$p\$/d" "$tree/missing-deps.txt"
+  # Portable on purpose: macOS sed -i takes a backup suffix, GNU sed does not.
+  if [ -f "$tree/missing-deps.txt" ]; then
+    grep -vx "$p" "$tree/missing-deps.txt" > "$tree/missing-deps.tmp" || true
+    mv "$tree/missing-deps.tmp" "$tree/missing-deps.txt"
+  fi
   for item in ${line#* }; do
     case "$item" in
       bin:*) : > "$bin/${item#bin:}"; chmod +x "$bin/${item#bin:}" ;;
