@@ -115,7 +115,7 @@ describe("the skill catalog matches the skills that ship", () => {
     expect(headline.length).toBeGreaterThanOrEqual(3);
     for (const s of headline) expect(SHIPPED).toContain(s);
     const readme = read("README.md");
-    expect(readme).toContain(`${String(SHIPPED.length)} skills help`);
+    expect(readme).toContain(`optional, ${String(SHIPPED.length)} of them`);
     expect(readme).toContain(`All ${String(SHIPPED.length)}, by stage`);
   });
 });
