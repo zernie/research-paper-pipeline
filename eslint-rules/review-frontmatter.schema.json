@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "urn:paperlint:review-frontmatter",
   "title": "paperlint review frontmatter",
-  "description": "The YAML frontmatter of a review report under reviews/. A review with no `findings` key is not a findings record and is not checked for findings. A project adds its own required fields with the `reviewSchema` setting; its schema is applied together with this one.",
+  "description": "The YAML frontmatter of a review report under reviews/. A review with no `findings` key is not a findings record and is not checked for findings.",
   "type": "object",
   "properties": {
     "findings": {

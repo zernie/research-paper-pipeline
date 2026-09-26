@@ -372,7 +372,7 @@ export function nextSteps(
 ): string {
   return [
     ``,
-    `next:  npx paperlint new <name>   # start a paper in ${papersDir}/ from the template`,
+    `next:  npx paperlint new <name> --venue <preset>   # start a paper in ${papersDir}/ from the template`,
     ...(toolchain
       ? [
           `       npx paperlint toolchain    # TeX Live for building (${TOOLCHAIN_COST})`,

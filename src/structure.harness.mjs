@@ -71,8 +71,8 @@ try {
   );
   check(
     "and the message names the CONSEQUENCE, not a restatement of the condition",
-    /is checked/.test(at("no-scorecard")[0].message) &&
-      /stages, sources or research question/.test(
+    /are skipped/.test(at("no-scorecard")[0].message) &&
+      /stage, source and research-question checks/.test(
         at("no-scorecard")[0].message,
       ),
   );

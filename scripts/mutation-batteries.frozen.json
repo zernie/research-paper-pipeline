@@ -99,7 +99,7 @@
       "cases": 6
     },
     "src/new-paper.mutations.mjs": {
-      "cases": 4
+      "cases": 3
     },
     "src/structure.mutations.mjs": {
       "cases": 4

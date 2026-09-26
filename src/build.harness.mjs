@@ -74,6 +74,10 @@ function fakeTex({
   log = "",
   missing = false,
   noPdf = false,
+  // `noLog`: pdflatex that dies before it opens paper.log (a format it cannot load); what it
+  // printed is `stdout`.
+  noLog = false,
+  stdout = "",
 } = {}) {
   const calls = [];
   const run = (bin, args, opts) => {
@@ -85,11 +89,11 @@ function fakeTex({
       };
     if (bin === "pdflatex") {
       writeFileSync(join(opts.cwd, "paper.aux"), aux);
-      writeFileSync(join(opts.cwd, "paper.log"), log);
+      if (!noLog) writeFileSync(join(opts.cwd, "paper.log"), log);
       // `noPdf`: what real pdflatex does on a document with no pages — "No pages of output.", exit 0.
       if (exitCode === 0 && !noPdf)
         writeFileSync(join(opts.cwd, "paper.pdf"), "%PDF-fake");
-      return { status: exitCode, stdout: "", stderr: "" };
+      return { status: exitCode, stdout, stderr: "" };
     }
     if (bin === "bibtex") {
       writeFileSync(join(opts.cwd, "paper.bbl"), "\\begin{thebibliography}{1}");
@@ -394,6 +398,46 @@ try {
   );
   check("…and says the PDF was removed", /paper\.pdf removed/.test(shown));
   check("a failed pass is not retried", ftex.calls.length === 1);
+
+  // ── pdflatex dies before writing a log ────────────────────────────────────────────────
+  // Seen 2026-09-26: a TeX Live whose pdflatex format was never built. pdflatex exits 1 having
+  // printed the reason, and paper.log is either absent or left over from an earlier build.
+  const nolog = paper("nolog", {
+    "paper.tex": CLEAN_TEX,
+    "paper.log": "./paper.tex:9: OLD ERROR FROM YESTERDAY\nl.9 \\old\n",
+  });
+  const dieTex = fakeTex({
+    exitCode: 1,
+    noLog: true,
+    stdout:
+      "This is pdfTeX, Version 3.141592653-2.6-1.40.28 (TeX Live 2026) (INITEX)\n" +
+      "I can't find the format file `pdflatex.fmt'!\n",
+  });
+  const rn = await buildPaper(nolog, {
+    cwd: root,
+    readPdf: fakeRead,
+    run: dieTex.run,
+    env: ENV,
+    log: quiet,
+  });
+  const shownN = formatResult(rn);
+  // Guards: the reason pdflatex printed reaches the human when there is no log to quote.
+  check(
+    "🔴 no log: the failure shows what pdflatex printed",
+    rn.status === "failed" && shownN.includes("I can't find the format file"),
+    shownN,
+  );
+  // Guards: a log from an earlier build is never quoted as this build's error.
+  check(
+    "🔴 no log: a stale paper.log from an earlier build is not quoted",
+    !shownN.includes("OLD ERROR FROM YESTERDAY"),
+    shownN,
+  );
+  check(
+    "no log: it does not point at a log file that this run did not write",
+    !shownN.includes("full log:") && shownN.includes("wrote no paper.log"),
+    shownN,
+  );
 
   // ── pdflatex not installed ────────────────────────────────────────────────────────────
   const rm = await buildPaper(clean, {

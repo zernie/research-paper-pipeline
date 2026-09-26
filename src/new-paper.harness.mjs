@@ -191,6 +191,8 @@ try {
     "---\n---\n# House scorecard for {{name}}\n",
   );
   const own = newPaper(papers, "house", "md");
+  // Guards: the override slot — `fromTemplate` in new-paper.ts reads `<papers>/.template/<file>`
+  // before the package's copy. Replace that lookup with the package's alone and this goes red.
   check(
     "🔴 <papers>/.template/ is preferred for the file it holds, the package fills the rest",
     own.ok &&

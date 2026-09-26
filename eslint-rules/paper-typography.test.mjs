@@ -203,6 +203,46 @@ describe("paper/leading-zero", () => {
   });
 });
 
+describe("paper/leading-zero — a number after ¶ or § is not a decimal (#102)", () => {
+  // From a consumer's bibliography: `--fix` rewrote the paragraph number `¶¶.42` to `¶¶0.42`.
+  const CITE =
+    "PCAOB. \\emph{Audit of Financial Statements}, ¶¶.42 (design\neffectiveness) and .44 (operating effectiveness).";
+
+  it.each([
+    ["¶¶.42", "Standard 5, ¶¶.42 applies."],
+    ["¶ .42", "Standard 5, ¶ .42 applies."],
+    ["\\P\\P.42", "Standard 5, \\P\\P.42 applies."],
+    ["§.12", "Rule 10b-5, §.12 applies."],
+  ])("SILENT: %s is a designator", async (_, body) => {
+    // Guards: the defect — the lexeme after a paragraph/section sign was read as a decimal.
+    expect(ids(await lint(doc(body)), "paper/leading-zero")).toEqual([]);
+    expect(await fixed(doc(body))).toBe(doc(body));
+  });
+
+  it("🔴 the list continuation `and .44` is reported WITHOUT a fix, with the zero as a suggestion", async () => {
+    const res = await lint(doc(CITE));
+    const found = ids(res, "paper/leading-zero");
+    expect(found.map((m) => [m.line, m.message.slice(0, 5)])).toEqual([
+      [4, "`.44`"],
+    ]);
+    expect(found[0].fix).toBeUndefined();
+    expect(found[0].suggestions).toHaveLength(1);
+    // Guards: --fix changes nothing in an ambiguous paragraph — neither number.
+    expect(await fixed(doc(CITE))).toBe(doc(CITE));
+  });
+
+  it("…while a real decimal still fixes, in markdown too, even beside a cited paragraph", async () => {
+    const body = `${CITE}\n\nWe use a threshold of .05 throughout.`;
+    expect(await fixed(doc(body))).toBe(
+      doc(`${CITE}\n\nWe use a threshold of 0.05 throughout.`),
+    );
+    const md = "See ¶¶.42 and .44.\n\nSignificant at p<.05.\n";
+    expect(await fixed(md, "paper.md")).toBe(
+      "See ¶¶.42 and .44.\n\nSignificant at p<0.05.\n",
+    );
+  });
+});
+
 describe("paper/figure-ref-style", () => {
   it("the minority form is reported and rewritten to the majority", async () => {
     const src = doc("Figure~\\ref{a}, Figure~\\ref{b} and Fig.~\\ref{c}.");

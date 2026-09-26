@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stands in for fmtutil-sys: records its arguments in fmtutil.log at the tree root.
+bin=$(cd "$(dirname "$0")" && pwd)
+echo "$*" >> "$bin/../../fmtutil.log"

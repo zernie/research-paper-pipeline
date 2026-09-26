@@ -354,9 +354,8 @@ function latexPass(
   const r = ctx.run("pdflatex", pdflatexArgs(final), opts);
   if (r.error) return null;
   const exitCode = r.status ?? 1;
-  const log = unwrapLog(
-    readOr(join(ctx.paperDir, `${JOB}.log`), "latin1") ?? "",
-  );
+  const written = readOr(join(ctx.paperDir, `${JOB}.log`), "latin1");
+  const log = unwrapLog(written ?? "");
   return {
     step: "latex",
     final,
@@ -365,9 +364,29 @@ function latexPass(
     after: hashes(ctx.paperDir),
     markers: logMarkers(log),
     bib: bibInput(ctx.paperDir),
-    errorLines: exitCode === 0 ? [] : errorExcerpt(log).map(fromLatin1),
+    errorLines:
+      exitCode === 0
+        ? []
+        : written === null
+          ? printed(r)
+          : errorExcerpt(log).map(fromLatin1),
   };
 }
+
+/**
+ * The last lines pdflatex printed, for the run that wrote no log — it died before opening one (a
+ * format it cannot load, a missing TeX Live file). Marked by NO_LOG, which the report keys on.
+ */
+function printed(r: { stdout?: unknown; stderr?: unknown }): string[] {
+  const lines = fromLatin1(
+    `${String(r.stdout ?? "")}\n${String(r.stderr ?? "")}`,
+  )
+    .split("\n")
+    .filter((l) => l.trim());
+  return [NO_LOG, ...lines.slice(-8).map((l) => `  ${l}`)];
+}
+
+const NO_LOG = `pdflatex wrote no ${JOB}.log — the last lines it printed:`;
 
 /** One bibtex run, on the input the `.aux` names BEFORE it runs, or null when it could not start. */
 function bibtexPass(ctx: BuildContext, opts: SpawnOptions): Observation | null {
@@ -395,6 +414,9 @@ export function compile(ctx: BuildContext): {
 } {
   const history: Observation[] = [];
   const opts = spawnOptions(ctx);
+  // Every log this loop reads is one its own pdflatex wrote. A pdflatex that dies before opening
+  // paper.log would otherwise have an earlier build's error quoted as this one's.
+  rmSync(join(ctx.paperDir, `${JOB}.log`), { force: true });
   const runs = { latex: 0, bibtex: 0 };
   for (;;) {
     const step = nextStep(summarize(history));
@@ -450,7 +472,7 @@ export const compileStep: BuildStep = {
           ...(end.lines.length
             ? end.lines
             : ["(no error line found in the log)"]),
-          `full log: ${log}`,
+          ...(end.lines[0] === NO_LOG ? [] : [`full log: ${log}`]),
         ],
       };
     }

@@ -563,7 +563,7 @@ try {
         return false;
       }
     };
-    const UNBUILT = /does not exist, so its page limit/;
+    const UNBUILT = /not built yet, so .*page limit/;
     const NO_PRESET = /names no venue preset yet/;
     const lint = sh(bin, ["lint", "--json"], { cwd: consumer });
     expectedWarnings({ acmart: UNBUILT })(lint)

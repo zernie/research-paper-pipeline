@@ -23,6 +23,7 @@ import { buildConfig, run } from "./cli.ts";
 import {
   narrowToOwners,
   ownedPatterns,
+  ownedScopes,
   ruleOwners,
   scopeToOwned,
 } from "./paper-files.ts";
@@ -160,6 +161,73 @@ describe("`rules` blocks reach only the files each rule is written for", () => {
   });
 });
 
+describe("🔴 a generated block never reaches a file paperlint does not lint (#101)", () => {
+  // A venue preset with `rules` (agenticdev turns on pdf/last-page-balance) became a block over
+  // every paper file. `pdf` is registered for every file, so the block was not narrowed, and the
+  // siblings index — which the sibling-card block excludes — matched a block with no language:
+  // ESLint parsed it as JavaScript ("Parsing error: Assigning to rvalue").
+  const SIBLINGS = {
+    "papers/a/siblings/README.md": "# Siblings\n\n- [x](smith2025.md)\n",
+    "papers/a/siblings/smith2025.md": "---\nread: full\n---\n# Smith 2025\n",
+  };
+
+  it.each([
+    [
+      "a venue preset's rules",
+      {
+        "papers/a/paperlint.json": JSON.stringify({
+          extends: "paperlint:agenticdev",
+        }),
+      },
+    ],
+    [
+      // `papers/**` alone would not show it: ESLint does not lint a file on a pattern ending in
+      // `/**`, it only applies such a block to files something else claims.
+      "a root block over every markdown file",
+      {
+        "paperlint.json": JSON.stringify({
+          rules: [
+            {
+              files: ["papers/**/*.md", "papers/**/*.tex"],
+              rules: { "pdf/last-page-balance": "warn" },
+            },
+          ],
+        }),
+      },
+    ],
+    [
+      "a paper's own { id: severity }",
+      {
+        "papers/a/paperlint.json": JSON.stringify({
+          rules: { "pdf/last-page-balance": "warn" },
+        }),
+      },
+    ],
+  ])(
+    "%s: the siblings index is not parsed, the cards still are",
+    async (_, settings) => {
+      const root = project({ ...SIBLINGS, ...settings });
+      const r = await lint(root);
+      const results = JSON.parse(r.out) as {
+        filePath: string;
+        messages: { ruleId: string | null; message: string }[];
+      }[];
+      // Guards: the class — no file reaches ESLint's default JavaScript parser.
+      expect(
+        results.flatMap((x) => x.messages).filter((m) => m.ruleId === null),
+      ).toEqual([]);
+      expect(linted(r.out)).not.toContain(
+        join(root, "papers/a/siblings/README.md"),
+      );
+      // Guards: the other half — narrowing did not drop the files the block is for.
+      expect(linted(r.out)).toContain(
+        join(root, "papers/a/siblings/smith2025.md"),
+      );
+      expect(linted(r.out)).toContain(join(root, "papers/a/paper.tex"));
+    },
+  );
+});
+
 describe("`rules` blocks — where the rule lands", () => {
   it("on its own files and on no other", async () => {
     const root = project();
@@ -206,11 +274,48 @@ describe("paper-files — the pieces", () => {
     expect(ownedPatterns(own)).toEqual(["**/a.md", "**/b.md", "**/c.md"]);
   });
 
-  it("a rule's owner is where its plugin is registered; a global plugin owns every file", () => {
+  it("a rule's owner is where its plugin is registered; a global plugin owns every OWNED file", () => {
     const owners = ruleOwners(own);
-    expect(owners.get("g/any")).toBeNull();
-    expect(owners.get("p/one")).toEqual(["**/a.md"]);
-    expect(owners.get("p/two")).toEqual(["**/b.md", "**/c.md"]);
+    expect(owners.get("g/any")).toEqual([
+      { files: ["**/a.md", "**/b.md", "**/c.md"], ignores: [] },
+    ]);
+    expect(owners.get("p/one")).toEqual([{ files: ["**/a.md"], ignores: [] }]);
+    expect(owners.get("p/two")).toEqual([
+      { files: ["**/b.md", "**/c.md"], ignores: [] },
+    ]);
+  });
+
+  it("🔴 a scope keeps its block's exceptions, and a global plugin inherits them (#101)", () => {
+    const withIndex = [
+      ...own,
+      {
+        files: ["**/s/*.md"],
+        ignores: ["**/s/README.md"],
+        plugins: { s: { rules: { card: {} } } },
+      },
+    ];
+    expect(ownedScopes(withIndex)).toEqual([
+      { files: ["**/a.md", "**/b.md", "**/c.md"], ignores: [] },
+      { files: ["**/s/*.md"], ignores: ["**/s/README.md"] },
+    ]);
+    // Guards: the defect — the plugin registered for every file used to keep any glob, and so
+    // reached the index the card block excludes.
+    expect(ruleOwners(withIndex).get("g/any")).toEqual(ownedScopes(withIndex));
+    expect(
+      narrowToOwners(
+        {
+          basePath: "/x",
+          files: ["papers/**/*.md"],
+          rules: { "g/any": "warn" },
+        },
+        ruleOwners(withIndex),
+      ).at(-1),
+    ).toEqual({
+      basePath: "/x",
+      files: [["papers/**/*.md", "**/s/*.md"]],
+      ignores: ["**/s/README.md"],
+      rules: { "g/any": "warn" },
+    });
   });
 });
 
@@ -249,7 +354,7 @@ describe("paper-files — narrowing a block", () => {
       },
       {
         basePath: "/x",
-        files: ["papers/**"],
+        files: ["**/a.md", "**/b.md", "**/c.md"].map((o) => ["papers/**", o]),
         ignores: ["papers/old/**"],
         rules: { "g/any": "off" },
       },

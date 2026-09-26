@@ -9,6 +9,15 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --repository) repo=$2; shift 2 ;;
     install) shift; break ;;
+    # `check depends` in tlmgr's own layout: every name in missing-deps.txt (what the stub
+    # install-tl was told to drop) is a dependency without a package. Not logged: it installs nothing.
+    check)
+      if [ -s "$tree/missing-deps.txt" ]; then
+        echo " DEPENDS WITHOUT PACKAGES:"
+        sed 's/$/ in: collection-basic latex-bin/' "$tree/missing-deps.txt"
+        exit 2
+      fi
+      exit 0 ;;
     *) shift ;;
   esac
 done
@@ -33,6 +42,12 @@ for p in "$@"; do
     echo "tlmgr install: package $p not present in repository."
     status=1
     continue
+  fi
+  # Installing a dropped dependency repairs the tree.
+  # Portable on purpose: macOS sed -i takes a backup suffix, GNU sed does not.
+  if [ -f "$tree/missing-deps.txt" ]; then
+    grep -vx "$p" "$tree/missing-deps.txt" > "$tree/missing-deps.tmp" || true
+    mv "$tree/missing-deps.tmp" "$tree/missing-deps.txt"
   fi
   for item in ${line#* }; do
     case "$item" in

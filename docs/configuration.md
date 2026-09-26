@@ -91,10 +91,25 @@ skills' keys), which are refused here by name. **It merges over the root file:**
 | `$comment` | a note for humans; ignored                                                                                                                                                                 |
 
 `paperlint new` writes this file from the template (`templates/paper/paperlint.json`, or your
-`<papers>/.template/paperlint.json` if you keep one), with `"extends": null` — no venue chosen yet —
-and a `$comment` saying what goes there. Until `extends` names a preset (here or in the root file),
-`paperlint lint` gives that paper one warning, `pdf/measured`: "this paper names no venue preset
-yet … set "extends" in papers/my-paper/paperlint.json".
+`<papers>/.template/paperlint.json` if you keep one). With `--venue` it writes the venue into it:
+
+```sh
+npx paperlint new my-paper --venue agenticdev --kind short        # "extends": "paperlint:agenticdev"
+npx paperlint new my-paper --venue ./venues/my-workshop.jsonc     # "extends": "../../venues/my-workshop.jsonc"
+```
+
+- A shipped name becomes `paperlint:<name>`; an unknown one exits 2 and lists the shipped presets.
+- A path starts with `./` or `../` and is relative to where you run the command. It is written
+  relative to the paper's `paperlint.json`, which is what `extends` is relative to.
+- `--kind` must be one of the preset's kinds, and needs `--venue`. A preset with kinds and no
+  `--kind` is written anyway; `new` then says that lint reports `pdf/profile` until `kind` is set.
+- On a terminal without `--venue`, `new` asks for the venue (default: none) and then its kind.
+- An existing `paperlint.json` is never overwritten, so `--venue` for it is refused.
+
+Without a venue the file has `"extends": null` and a `$comment` saying what goes there. Until
+`extends` names a preset (here or in the root file), `paperlint lint` gives that paper one warning,
+`pdf/measured`: "this paper names no venue preset yet … set "extends" in
+papers/my-paper/paperlint.json".
 
 **Any other key is an error**, in either file, named in the message: `paperlint.json: unknown key
 "papersdir"`. A misspelt key would otherwise read as "not set", and the setting you meant would
@@ -304,3 +319,32 @@ export default buildConfig({}, texLanguage);
 That config is the whole config for your papers: it starts with a global ignore of every file its
 rules are not written for, so `eslint .` with it lints only the paper files. Do not spread it into a
 config that also lints your JavaScript — that code would be ignored.
+
+### Your own ESLint run over paper files: register paperlint's rules, off
+
+If your `eslint.config.mjs` also lints the paper files — for rules of your own, with paperlint's LaTeX
+language — a `% eslint-disable-next-line paper/leading-zero -- why` in a paper fails that run with
+`Definition for rule 'paper/leading-zero' was not found`: your config does not know paperlint's rule
+names. Spread `rulesOff` first:
+
+```js
+// eslint.config.mjs
+import { rulesOff } from "paperlint/bin/paperlint.mjs";
+import { texLanguage } from "paperlint/eslint-rules/latex-language.mjs";
+
+export default [
+  ...rulesOff(texLanguage),
+  { files: ["**/paper.tex"], language: "tex/latex", rules: {/* your rules */} },
+];
+```
+
+It registers every rule paperlint ships, each turned off (`paperlint lint` is where they run), and
+the LaTeX language as `tex/latex` — use that instead of registering a `tex` plugin of your own, or
+ESLint refuses the config with `Cannot redefine plugin "tex"`, with or without the language. Without
+`texLanguage` it registers the rules only, for a config that lints markdown papers alone.
+
+On the files paperlint lints it also turns off ESLint's report of unused disable directives: a
+directive naming a rule that is off suppresses nothing, and would be reported as unused in every such
+run. `paperlint lint` still reports a directive that silences nothing.
+
+`rulePlugins(texLanguage)` gives the same plugins without the rule levels, one object per plugin name.

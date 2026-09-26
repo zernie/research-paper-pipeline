@@ -98,12 +98,85 @@ function scorecardAndSource(dir: string, format: PaperFormat): string[] {
   return hasSource ? [STATUS_FILE] : [STATUS_FILE, SOURCE_FILE[format]];
 }
 
-// Documented in README.md#starting-a-paper — update it when this changes.
+/** The venue `paperlint new --venue` chose: what goes into the new paper's `paperlint.json`. */
+export interface VenueSetting {
+  /** `paperlint:<name>`, or a path relative to the paper's `paperlint.json`. */
+  readonly extends: string;
+  readonly kind: string | null;
+}
+
+/**
+ * The template's `paperlint.json` with the chosen venue written in. The template's `$comment`
+ * explains how to choose one, so it goes once one is chosen. A template that is not plain JSON (a
+ * project's own, with comments) cannot be edited safely and is refused by name.
+ */
+function withVenue(
+  text: string,
+  src: string,
+  venue: VenueSetting,
+): { ok: true; text: string } | { ok: false; reason: string } {
+  let obj: Record<string, unknown>;
+  try {
+    obj = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return {
+      ok: false,
+      reason: `--venue cannot be written into ${src}: it is not plain JSON — set "extends" by hand`,
+    };
+  }
+  const out: Record<string, unknown> = { ...obj, extends: venue.extends };
+  delete out["$comment"];
+  if (venue.kind !== null) out["kind"] = venue.kind;
+  return { ok: true, text: `${JSON.stringify(out, null, 2)}\n` };
+}
+
+/** A file `newPaper` will write: its text, and which template it came from. */
+interface Planned {
+  readonly file: string;
+  readonly text: string;
+  readonly from: "project" | "package";
+}
+
+/** One file's text from its template — the project's override first, the package's second. */
+function fromTemplate(
+  file: string,
+  {
+    papersRoot,
+    packageTemplates,
+    name,
+    venue,
+  }: {
+    papersRoot: string;
+    packageTemplates: string;
+    name: string;
+    venue: VenueSetting | null;
+  },
+): { ok: true; value: Planned } | { ok: false; reason: string } {
+  const project = join(papersRoot, OVERRIDE_DIR, file);
+  const [src, from] = existsSync(project)
+    ? [project, "project" as const]
+    : [join(packageTemplates, file), "package" as const];
+  // A missing package template is a broken install, not a reason to write an empty file.
+  if (!existsSync(src))
+    return { ok: false, reason: `no template for ${file}: ${src} is missing` };
+  const text = readFileSync(src, "utf8").split("{{name}}").join(name);
+  if (file !== CONFIG_FILE || venue === null)
+    return { ok: true, value: { file, text, from } };
+  const edited = withVenue(text, src, venue);
+  return edited.ok
+    ? { ok: true, value: { file, text: edited.text, from } }
+    : edited;
+}
+
+// Documented in README.md#getting-started — update it when this changes.
 export function newPaper(
   papersRoot: string,
   name: string,
   format: PaperFormat,
-  { packageTemplates = PACKAGE_TEMPLATES }: { packageTemplates?: string } = {},
+  {
+    packageTemplates = PACKAGE_TEMPLATES,
+    venue = null,
+  }: { packageTemplates?: string; venue?: VenueSetting | null } = {},
 ): NewPaperResult {
   const problem = nameProblem(name);
   if (problem) return { ok: false, reason: problem };
@@ -113,26 +186,20 @@ export function newPaper(
     return { ok: false, reason: `${dir} exists and is not a directory` };
 
   const files: FileOutcome[] = [];
-  const toWrite: { file: string; text: string; from: "project" | "package" }[] =
-    [];
+  const toWrite: Planned[] = [];
   for (const file of wantedFiles(dir, format)) {
     if (existsSync(join(dir, file))) {
       files.push({ file, status: "kept" });
       continue;
     }
-    const project = join(papersRoot, OVERRIDE_DIR, file);
-    const fromPackage = join(packageTemplates, file);
-    const [src, from] = existsSync(project)
-      ? [project, "project" as const]
-      : [fromPackage, "package" as const];
-    // A missing package template is a broken install, not a reason to write an empty file.
-    if (!existsSync(src))
-      return {
-        ok: false,
-        reason: `no template for ${file}: ${src} is missing`,
-      };
-    const text = readFileSync(src, "utf8").split("{{name}}").join(name);
-    toWrite.push({ file, text, from });
+    const planned = fromTemplate(file, {
+      papersRoot,
+      packageTemplates,
+      name,
+      venue,
+    });
+    if (!planned.ok) return planned;
+    toWrite.push(planned.value);
   }
   // Read every template before writing any file, so a missing one leaves no half-made folder.
   mkdirSync(dir, { recursive: true });

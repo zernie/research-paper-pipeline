@@ -24,6 +24,14 @@
  *    per owner and its `files` ANDed with the owner's (ESLint's nested-array form), so a rule can
  *    only land where its plugin is registered.
  *
+ * Both read ONE definition of "the files paperlint lints": `ownedScopes`, each own block's `files`
+ * together with its `ignores`. The globs alone are not that definition. The sibling-card block
+ * claims every markdown file under `siblings/` EXCEPT the index, and a rule whose plugin is
+ * registered for every file (`pdf`) used to keep the consumer block's `files` as they were — so a
+ * venue preset's rules reached `siblings/README.md`, a block with no `language` matched it, and
+ * ESLint parsed the markdown as JavaScript (#101). Now every generated block narrows to scopes,
+ * exceptions included, and a plugin registered everywhere owns exactly what paperlint lints.
+ *
  * ESLint's semantics that this leans on, each measured against ESLint 10 before writing it:
  * - a global-ignore pattern that matches a DIRECTORY hides everything inside it, so directories
  *   must be un-ignored (`!` + a pattern ending in a slash) before owned files can be;
@@ -37,9 +45,19 @@ import type { RuleBlock, RuleEntry } from "./rules-config.ts";
 /** What this module reads of a config block. */
 interface Block {
   readonly files?: readonly unknown[];
+  readonly ignores?: readonly unknown[];
   readonly plugins?: Readonly<
     Record<string, { readonly rules?: Readonly<Record<string, unknown>> }>
   >;
+}
+
+/**
+ * A set of files paperlint lints: an own block's globs and the exceptions that block makes. A file is
+ * in it when it matches one of `files` and none of `ignores`.
+ */
+export interface OwnedScope {
+  readonly files: readonly string[];
+  readonly ignores: readonly string[];
 }
 
 /** A `files` entry: one glob, or several that must ALL match. */
@@ -56,9 +74,42 @@ export interface ScopedBlock {
 const globsOf = (b: Block): string[] =>
   (b.files ?? []).filter((f): f is string => typeof f === "string");
 
+const stringsOf = (xs: readonly unknown[] | undefined): string[] =>
+  (xs ?? []).filter((x): x is string => typeof x === "string");
+
+/**
+ * Scopes with the same exceptions, merged into one: their globs united, once, in order. Keeps a
+ * generated block per distinct set of exceptions rather than one per own block.
+ */
+const merged = (scopes: readonly OwnedScope[]): OwnedScope[] => {
+  const byIgnores = new Map<string, OwnedScope>();
+  for (const s of scopes) {
+    const key = JSON.stringify(s.ignores);
+    const had = byIgnores.get(key);
+    byIgnores.set(key, {
+      files: [...new Set([...(had?.files ?? []), ...s.files])],
+      ignores: s.ignores,
+    });
+  }
+  return [...byIgnores.values()];
+};
+
+/**
+ * THE FILES PAPERLINT LINTS: every own block that names `files`, with its `ignores`. A block without
+ * `files` (a global ignore, or the block registering `pdf` for every file) claims nothing.
+ */
+export function ownedScopes(own: readonly unknown[]): OwnedScope[] {
+  return merged(
+    own
+      .map((raw) => raw as Block)
+      .filter((b) => b.files !== undefined)
+      .map((b) => ({ files: globsOf(b), ignores: stringsOf(b.ignores) })),
+  );
+}
+
 /** Every glob paperlint's own blocks lint, once, in config order. */
 export function ownedPatterns(own: readonly unknown[]): string[] {
-  return [...new Set(own.flatMap((b) => globsOf(b as Block)))];
+  return [...new Set(ownedScopes(own).flatMap((s) => s.files))];
 }
 
 /** ESLint's default ignores, re-applied after directories are un-ignored. */
@@ -84,40 +135,37 @@ const ruleIdsOf = (b: Block): string[] =>
     Object.keys(plugin.rules ?? {}).map((rule) => `${name}/${rule}`),
   );
 
-/** An owner seen so far, widened by one more block's globs; `null` (every file) absorbs all. */
-const widen = (
-  had: readonly string[] | null | undefined,
-  files: readonly string[] | null,
-): readonly string[] | null =>
-  had === null || files === null
-    ? null
-    : [...new Set([...(had ?? []), ...files])];
-
 /**
- * Rule id → the globs of the blocks that register its plugin with that rule. `null`: the plugin
- * is registered for every file (a block without `files`), so the rule resolves anywhere.
+ * Rule id → the scopes of the blocks that register its plugin with that rule. A plugin registered
+ * for every file (a block without `files`) owns every scope — everything paperlint lints, and not
+ * one file more.
  */
 export function ruleOwners(
   own: readonly unknown[],
-): Map<string, readonly string[] | null> {
-  const owners = new Map<string, readonly string[] | null>();
+): Map<string, readonly OwnedScope[]> {
+  const all = ownedScopes(own);
+  const found = new Map<string, OwnedScope[]>();
   for (const raw of own) {
     const b = raw as Block;
-    const files = b.files ? globsOf(b) : null;
-    for (const id of ruleIdsOf(b)) owners.set(id, widen(owners.get(id), files));
+    const scopes =
+      b.files === undefined
+        ? all
+        : [{ files: globsOf(b), ignores: stringsOf(b.ignores) }];
+    for (const id of ruleIdsOf(b))
+      found.set(id, [...(found.get(id) ?? []), ...scopes]);
   }
-  return owners;
+  return new Map([...found].map(([id, scopes]) => [id, merged(scopes)]));
 }
 
 /**
- * One consumer block → one block per owner, each carrying only that owner's rules, its `files`
- * ANDed with the owner's globs. A rule no block of this config registers (the LaTeX block is
- * absent when its parser did not load) gets no block: it has no file to reach in this run, and
- * naming it to ESLint would only crash.
+ * One consumer block → one block per owner scope, each carrying only that owner's rules, its `files`
+ * ANDed with the scope's globs and its `ignores` joined by the scope's exceptions. A rule no block
+ * of this config registers (the LaTeX block is absent when its parser did not load) gets no block:
+ * it has no file to reach in this run, and naming it to ESLint would only crash.
  */
 export function narrowToOwners(
   block: RuleBlock,
-  owners: ReadonlyMap<string, readonly string[] | null>,
+  owners: ReadonlyMap<string, readonly OwnedScope[]>,
 ): ScopedBlock[] {
   const groups = new Map<string, Record<string, RuleEntry>>();
   for (const [id, entry] of Object.entries(block.rules)) {
@@ -126,19 +174,27 @@ export function narrowToOwners(
     const key = JSON.stringify(owner);
     groups.set(key, { ...groups.get(key), [id]: entry });
   }
-  return [...groups].map(([key, rules]) => {
-    const owner = JSON.parse(key) as string[] | null;
-    const files: readonly FilesEntry[] | undefined =
-      owner === null
-        ? block.files
-        : block.files
-          ? block.files.flatMap((f) => owner.map((o) => [f, o]))
-          : owner;
-    return {
-      basePath: block.basePath,
-      ...(files ? { files } : {}),
-      ...(block.ignores ? { ignores: block.ignores } : {}),
-      rules,
-    };
-  });
+  return [...groups].flatMap(([key, rules]) =>
+    (JSON.parse(key) as OwnedScope[]).map((scope) =>
+      within(block, scope, rules),
+    ),
+  );
+}
+
+/** `block`'s rules over the files both it and `scope` claim, minus both sets of exceptions. */
+function within(
+  block: RuleBlock,
+  scope: OwnedScope,
+  rules: Readonly<Record<string, RuleEntry>>,
+): ScopedBlock {
+  const files: readonly FilesEntry[] = block.files
+    ? block.files.flatMap((f) => scope.files.map((o) => [f, o]))
+    : scope.files;
+  const ignores = [...(block.ignores ?? []), ...scope.ignores];
+  return {
+    basePath: block.basePath,
+    files,
+    ...(ignores.length ? { ignores } : {}),
+    rules,
+  };
 }

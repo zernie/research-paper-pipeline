@@ -164,6 +164,41 @@ export function probeTree(
   return missingPackages(packages, String(r.stdout ?? ""));
 }
 
+/**
+ * Packages the tree's OWN database lists as dependencies but never installed, by its `tlmgr check
+ * depends`. 🔴 The venue's `.sty` files are not enough evidence of a working tree: install-tl that
+ * cannot download a package prints "continuing anyway", and a missing `unicode-data` leaves every
+ * `.sty` in place while the pdflatex format cannot be built — pdflatex then dies before writing a
+ * log. Only paperlint's cache trees are asked: their tlmgr writes to a directory we own. A tlmgr
+ * that cannot start returns nothing here; the tree is then judged by `probeTree` alone.
+ */
+export function missingDependencies(
+  bin: string,
+  run: Runner = spawnSync,
+): string[] {
+  const r = run(join(bin, "tlmgr"), ["check", "depends"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (r.error) return [];
+  const lines = String(r.stdout ?? "").split("\n");
+  const start = lines.findIndex(
+    (l) => l.trim() === "DEPENDS WITHOUT PACKAGES:",
+  );
+  if (start < 0) return [];
+  // The section runs until tlmgr's next header. Headers open with a form feed and a space, entries
+  // with the package name, so a header is any line with leading whitespace.
+  const section = lines.slice(start + 1);
+  const end = section.findIndex((l) => l !== l.trimStart() || !l.trim());
+  return [
+    ...new Set(
+      (end < 0 ? section : section.slice(0, end)).map((l) =>
+        l.split(" in: ")[0]!.trim(),
+      ),
+    ),
+  ].sort();
+}
+
 /** The first directory on `path` holding a runnable `name` — what a shell would run. */
 export function whichOnPath(
   name: string,

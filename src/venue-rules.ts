@@ -430,7 +430,7 @@ const META: Readonly<Record<VenueRuleName, Meta>> = {
     },
     messages: {
       unbuilt:
-        "this paper names the venue `{{venue}}`, but {{file}} does not exist, so its page limit, fonts and format were NOT checked — run `paperlint build` before `paperlint lint`",
+        "not built yet, so `{{venue}}`'s page limit, fonts and format are not checked — run `paperlint build`",
       noPreset:
         'this paper names no venue preset yet, so its page limit, fonts and format are not checked — set "extends" in {{file}} (e.g. "paperlint:agenticdev"; see docs/rules.md)',
       noGeometry:

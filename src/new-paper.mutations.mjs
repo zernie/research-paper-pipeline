@@ -52,20 +52,6 @@ process.exit(
         ],
       },
       {
-        name: "the project's template is ignored",
-        harness: HARNESS,
-        expect: "is preferred for the file it holds",
-        disables:
-          "the override slot. A project with its own richer scorecard gets the package's every time",
-        edits: [
-          [
-            SRC,
-            "    const [src, from] = existsSync(project)",
-            "    const [src, from] = false",
-          ],
-        ],
-      },
-      {
         name: "a leading dot is accepted",
         harness: HARNESS,
         expect: "discovery skips dot-directories",

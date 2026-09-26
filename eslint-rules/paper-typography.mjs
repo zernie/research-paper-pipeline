@@ -50,6 +50,14 @@
  * inserts the zero there. The arXiv lookbehind stays: in `2310.05736` the dot follows a digit.
  * A text macro outside the known set (`\hl{.05}`) is read as a parameter and NOT reported — a
  * miss costs less than a finding on markup.
+ *
+ * 🔴 A NUMBER AFTER `¶` OR `§` IS A DESIGNATOR, NOT A DECIMAL (#102). An auditing standard is cited
+ * by paragraph as `¶¶.42`, and `--fix` rewrote it to `¶¶0.42` — a fix that changed a reference.
+ * So a lexeme right after the sign (`¶`, `§`, `\P`, `\S`, spaces or `~` between) is silent. The
+ * same sentence then goes on `and .44`: a paragraph number continuing the list, or a decimal —
+ * the text does not say which. In a paragraph that already cites `¶.nn` this way, a bare decimal
+ * is REPORTED WITHOUT A FIX and the zero is offered as a suggestion: an autofix must never be the
+ * one to decide what a number means. A real `.05` in any other paragraph is fixed as before.
  */
 import { getParser } from "@unified-latex/unified-latex-util-parse";
 
@@ -312,16 +320,43 @@ function sectionWord(context) {
 // (2310.05736) out: there the dot follows a digit.
 const BARE_DECIMAL = /(?<![\d.\w])\.\d{2,}\b/g;
 
+// A paragraph or section sign — the glyph, or `\P`/`\S` not followed by a letter — and what may
+// sit between it and the number. Both read the SOURCE, because in LaTeX `\P\P.42` reaches the
+// visible runs as `.42` alone: the macros end the run.
+const DESIGNATOR_BEFORE = /(?:[¶§]|\\[PS](?![A-Za-z]))[ \t~]*$/;
+const DESIGNATED = /(?:[¶§]|\\[PS](?![A-Za-z]))[ \t~]*\.\d/;
+
+/** The source of the paragraph holding `i`, up to `i`: from the last blank line before it. */
+const paragraphBefore = (src, i) => {
+  const head = src.slice(0, i);
+  const blank = [...head.matchAll(/\n[ \t]*\n/g)].at(-1);
+  return head.slice(blank ? blank.index + blank[0].length : 0);
+};
+
 function leadingZero(context) {
-  for (const r of visibleRuns(context.sourceCode))
+  const sc = context.sourceCode;
+  const src = isTex(sc) ? sc.raw : sc.text;
+  for (const r of visibleRuns(sc))
     for (const m of r.text.matchAll(BARE_DECIMAL)) {
       const dot = r.offs[m.index];
       if (dot === null || dot === undefined) continue;
-      at(context, dot, dot + 1, {
-        messageId: "bare",
-        data: { n: m[0] },
-        fix: (f) => f.insertTextBeforeRange([dot, dot], "0"),
-      });
+      const before = paragraphBefore(src, dot);
+      if (DESIGNATOR_BEFORE.test(before)) continue;
+      const zero = (f) => f.insertTextBeforeRange([dot, dot], "0");
+      at(
+        context,
+        dot,
+        dot + 1,
+        DESIGNATED.test(before)
+          ? {
+              messageId: "ambiguous",
+              data: { n: m[0] },
+              suggest: [
+                { messageId: "insertZero", data: { n: m[0] }, fix: zero },
+              ],
+            }
+          : { messageId: "bare", data: { n: m[0] }, fix: zero },
+      );
     }
 }
 
@@ -349,13 +384,14 @@ function figureRefStyle(context) {
   }
 }
 
-const rule = (description, messages, check) => ({
+const rule = (description, messages, check, meta = {}) => ({
   meta: {
     type: "suggestion",
     fixable: "code",
     docs: { description },
     schema: [],
     messages,
+    ...meta,
   },
   create: (context) => ({ "root:exit": () => check(context) }),
 });
@@ -373,8 +409,12 @@ export default {
       "a decimal below 1 written without its leading zero (IEEE / ISO 80000-1); fixable",
       {
         bare: "`{{n}}` has no leading zero — write `0{{n}}` (IEEE / ISO 80000-1); `paperlint lint --fix` inserts it",
+        ambiguous:
+          "`{{n}}` in a paragraph that cites `¶`/`§` numbers: a decimal without its leading zero, or another paragraph number? Not fixed automatically — write `0{{n}}` for a decimal, or put the sign before a paragraph number",
+        insertZero: "It is a decimal: write `0{{n}}`",
       },
       leadingZero,
+      { hasSuggestions: true },
     ),
     "figure-ref-style": rule(
       "`Fig.~\\ref` and `Figure~\\ref` mixed in one document; fixable to the majority form",

@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import {
   resolveEngine,
+  missingDependencies,
   probeTree,
   supportedPlatform,
   whichOnPath,
@@ -103,7 +104,11 @@ export function gatherFacts(o: Resolved): EngineFacts {
     (tree): TreeProbe => ({
       label: `TeX Live ${tree.year} — paperlint cache (${tree.dir})`,
       bin: tree.bin,
-      missing: probeTree(tree.bin, o.tex.packages, o.run),
+      // Only a cache tree is asked for its dependencies: its tlmgr writes where we own.
+      missing: [
+        ...probeTree(tree.bin, o.tex.packages, o.run),
+        ...missingDependencies(tree.bin, o.run),
+      ],
     }),
   );
   const cache = usableTree(probes, (p) => p.missing.length === 0);

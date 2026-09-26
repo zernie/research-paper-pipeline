@@ -42,10 +42,11 @@ function project(files: Record<string, string> = {}): string {
 
 async function lint(
   root: string,
+  args: string[] = [],
 ): Promise<{ code: number; out: string; err: string }> {
   const out: string[] = [];
   const err: string[] = [];
-  const code = await run(["lint", "--json"], {
+  const code = await run(["lint", "--json", ...args], {
     cwd: root,
     log: (s: string) => out.push(s),
     err: (s: string) => err.push(s),
@@ -57,6 +58,43 @@ const rulesIn = (stdout: string, paper: string): string[] =>
   (JSON.parse(stdout) as { filePath: string; messages: { ruleId: string }[] }[])
     .filter((r) => r.filePath.endsWith(join(paper, "paper.tex")))
     .flatMap((r) => r.messages.map((m) => m.ruleId));
+
+describe("🔴 an optional rule that reaches no paper — judged against the PROJECT, not the run (#103)", () => {
+  const THIRD = {
+    "papers/c/paper.tex":
+      "\\documentclass{article}\n\\begin{document}x\\end{document}\n",
+    "papers/c/PIPELINE-STATUS.md": "---\nstages: []\n---\n",
+  };
+  const rootRules = (files: string[]) => ({
+    "paperlint.json": JSON.stringify({
+      rules: [{ files, rules: { "pdf/last-page-balance": "error" } }],
+    }),
+  });
+
+  it("linting paper c alone passes when the block reaches papers a and b", async () => {
+    const root = project({
+      ...THIRD,
+      ...rootRules(["papers/a/**", "papers/b/**"]),
+    });
+    const r = await lint(root, ["papers/c"]);
+    // Guards: the defect — the guard counted only the paper.tex files this run linted.
+    expect(r.err).not.toMatch(/no linted paper\.tex gets it/);
+    expect(r.code).toBe(0);
+    expect(rulesIn(r.out, "c")).not.toContain("pdf/last-page-balance");
+  });
+
+  it("…and a glob that reaches no paper of the project still fails, from a subset too", async () => {
+    const root = project({ ...THIRD, ...rootRules(["papers/typo/**"]) });
+    for (const args of [["papers/c"], []]) {
+      const r = await lint(root, args);
+      // Guards: the other half — widening the judged set did not turn the guard off.
+      expect(r.err).toMatch(
+        /pdf\/last-page-balance is turned on in "rules", but no paper\.tex/,
+      );
+      expect(r.code).toBe(1);
+    }
+  });
+});
 
 describe("paperlint lint — `rules` in a paper's paperlint.json", () => {
   it("turns an optional rule on for that paper alone", async () => {
@@ -177,11 +215,9 @@ describe("paperlint lint — the venue preset's rules", () => {
     expect(cfgOf.ok && cfgOf.value).toEqual({
       preset: [
         {
+          // Scoped to the paper by `basePath` alone: which of its files the rule reaches is decided
+          // once, by narrowing to paperlint's owned scopes (#101), not by a copy of their globs.
           basePath: join(root, "papers/a"),
-          files: expect.arrayContaining([
-            "**/paper.tex",
-            "**/PIPELINE-STATUS.md",
-          ]),
           rules: { "pdf/last-page-balance": ["error", { tolerancePt: 120 }] },
         },
       ],

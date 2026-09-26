@@ -17,11 +17,14 @@ if [ -n "${FAKE_INSTALL_TL_FAIL:-}" ]; then
   exit 1
 fi
 mkdir -p "$dir/bin/x86_64-linux"
-for t in pdflatex kpsewhich tlmgr; do
+for t in pdflatex kpsewhich tlmgr fmtutil-sys; do
   cp "$here/stub-$t" "$dir/bin/x86_64-linux/$t"
   chmod +x "$dir/bin/x86_64-linux/$t"
 done
 : > "$dir/files.txt"
 # The real install-tl leaves release-texlive.txt at TEXDIR; stub-tlmgr reads the tree's year there.
 cp "$here/release-texlive.txt" "$dir/release-texlive.txt"
+# The real install-tl, when a mirror fails to serve a package, prints "continuing anyway" and
+# exits as if nothing happened. FAKE_INSTALL_TL_DROP names the package it lost.
+if [ -n "${FAKE_INSTALL_TL_DROP:-}" ]; then echo "$FAKE_INSTALL_TL_DROP" > "$dir/missing-deps.txt"; fi
 echo "fake install-tl: scheme-basic into $dir"

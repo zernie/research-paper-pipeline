@@ -316,6 +316,9 @@ describe("pdf/measured — a paper that names a venue and was not measured says 
     const fs = lint({ venue: DECL, facts: null, pdf: null });
     expect(ids(fs)).toEqual(["pdf/measured:unbuilt"]);
     expect(fs[0]?.message).toMatch(/paperlint build/);
+    // Guards: the message stays one short line — it is the first thing a new user sees.
+    expect(fs[0]?.message).toMatch(/^not built yet, so /);
+    expect(fs[0]?.message.length).toBeLessThan(110);
   });
 
   it("facts without geometry (no banal): pdf/measured names it, the three geometry rules are silent, fonts still judge", () => {
