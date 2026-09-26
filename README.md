@@ -91,9 +91,9 @@ Not shipped yet: IEEE, USENIX, NeurIPS, Springer, and ACL venues other than REAL
    npm i -D paperlint
    ```
 
-2. Set up. `init` asks where your papers live (default `papers/`), whether to install TeX Live, and
-   whether to add a CI workflow. With Claude Code it also installs the skills and three hooks
-   ([what they do](docs/install.md)).
+2. Set up. `init` asks three questions: where your papers live (default `papers/`), whether to
+   install TeX Live now, and whether to add a CI workflow. With Claude Code it also installs the
+   skills and three hooks ([what they do](docs/install.md)).
 
    ```sh
    npx paperlint init
@@ -108,12 +108,13 @@ Not shipped yet: IEEE, USENIX, NeurIPS, Springer, and ACL venues other than REAL
    npx paperlint new my-paper --venue agenticdev --kind short
    ```
 
-   It writes `papers/my-paper/` with `paper.tex` (your paper), `paperlint.json` (its venue preset
-   and kind) and `PIPELINE-STATUS.md` (the paper's progress, which the skills fill in — leave it as
-   generated).
+   It writes `papers/my-paper/` (in the folder you gave `init`) with three files:
+   - `paper.tex` — your paper;
+   - `paperlint.json` — its venue preset and kind;
+   - `PIPELINE-STATUS.md` — which stage the paper is at; the skills read and update it.
 
-4. Build the PDF. This needs TeX Live: yes in `init`, or `npx paperlint toolchain` once (~270 MB,
-   ~3 min).
+4. Build the PDF. **This needs TeX Live, a ~270 MB download (~3 min, once).** If you said no in
+   `init`, run `npx paperlint toolchain` first.
 
    ```sh
    npx paperlint build papers/my-paper
@@ -134,8 +135,8 @@ Not shipped yet: IEEE, USENIX, NeurIPS, Springer, and ACL venues other than REAL
      8:4   warning  `§` instead of the word «Section» — `paperlint lint --fix` writes it              paper/section-word
    ```
 
-   The stub is plain `article`; AgenticDev wants ACM's class. Make its first line
-   `\documentclass[sigconf]{acmart}`, build again, and the errors are gone.
+   `new` writes a format-neutral stub in plain `article`, and AgenticDev wants ACM's class. Make
+   the first line `\documentclass[sigconf]{acmart}`, build again, and the errors are gone.
 
 ### A paper you already have
 
@@ -203,8 +204,8 @@ papers/my-paper/paperlint.json   one paper: its venue preset ("extends"), its ki
 
 - `papersDir` is the folder that holds your paper folders; it defaults to `papers`.
 - The paper's venue preset is its `"extends"` key — the one `new --venue` writes.
-- A paper's file merges over the root's; an unknown key is an error, so a typo cannot silently turn
-  a setting off.
+- A paper's `paperlint.json` overrides the project's, key by key.
+- **An unknown key is an error**, so a typo cannot silently turn a setting off.
 
 Every key: [`docs/configuration.md`](docs/configuration.md). Already use ESLint for other files? See
 [`docs/configuration.md`](docs/configuration.md#using-the-rules-from-an-existing-eslint-config).
@@ -237,8 +238,14 @@ Give the path from where you run the command; `new` rewrites it relative to the 
 
 ## 🤖 Run it in CI
 
-The page limit, fonts and references are checked on what build measured, so the recommended job
-builds first. Installing TeX Live takes ~3 minutes the first time, seconds from the cache:
+Two options:
+
+| job                        | time                          | checks                                     |
+| -------------------------- | ----------------------------- | ------------------------------------------ |
+| build, then lint           | ~3 min first run, then cached | everything                                 |
+| lint only (`init` adds it) | seconds                       | the source; not pages, fonts or references |
+
+Lint judges pages, fonts and references from what build measured, so the full job builds first:
 
 ```yaml
 name: papers
@@ -261,9 +268,7 @@ jobs:
       - run: npx paperlint lint
 ```
 
-The cheap option runs lint alone — this is the step `init` offers. It checks the source and the
-records in seconds; each paper then gets one warning that it was not built, and the page, font and
-reference checks do not run:
+Lint only — each paper then gets one warning that it was not built:
 
 ```yaml
 - uses: zernie/paperlint@v3.0.0
